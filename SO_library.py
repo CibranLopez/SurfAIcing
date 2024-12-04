@@ -1,16 +1,19 @@
 import numpy             as np
 import matplotlib.pyplot as plt
 import multiprocessing   as mp
+import pandas as pd
+import matgl
+import warnings
 import re
 import os
 import subprocess
 
-from sklearn.model_selection import learning_curve
+from sklearn.model_selection import learning_curve, train_test_split
 from sklearn.preprocessing   import StandardScaler
-
-import sys
-sys.path.append('../../ICMAB/')
-import Diffusion.D_library as DL
+from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.core           import Structure
+from matgl.ext.ase           import M3GNetCalculator, Relaxer
+from pymatgen.io.ase         import AseAtomsAdaptor
 
 linewidth    = 0.5
 footnotesize = 8
@@ -158,7 +161,7 @@ def plot_learning_curve(estimator, figure_name, X, y, axes=None, ylim=None, cv=N
 
     # Plot learning curve
     
-    fig = plt.figure(figsize=DL.get_figsize(1, 0.9))
+    fig = plt.figure(figsize=(10, 10))
     if ylim is not None:
         plt.ylim(*ylim)
 
@@ -193,7 +196,7 @@ def plot_learning_curve(estimator, figure_name, X, y, axes=None, ylim=None, cv=N
 
     # Plot n_samples vs fit_times
     
-    fig = plt.figure(figsize=DL.get_figsize(1, 0.9))
+    fig = plt.figure(figsize=(10, 10))
     plt.grid()
     plt.plot(train_sizes, fit_times_mean, 'o-')
     plt.fill_between(
@@ -212,7 +215,7 @@ def plot_learning_curve(estimator, figure_name, X, y, axes=None, ylim=None, cv=N
 
     # Plot fit_time vs score
     
-    fig = plt.figure(figsize=DL.get_figsize(1, 0.9))
+    fig = plt.figure(figsize=(10, 10))
     fit_time_argsort = fit_times_mean.argsort()
     fit_time_sorted = fit_times_mean[fit_time_argsort]
     test_scores_mean_sorted = test_scores_mean[fit_time_argsort]
@@ -293,3 +296,74 @@ def generate_alloy_unitcell(substitutions_dict, path_to_alloy_folder, min_specie
     
     # If n_atoms is provided, prompt the number of atoms in the generated cell
     if n_atoms is not None: print(f'From {int(n_atoms)} to {int(np.power(replication_factor, 3) * n_atoms)} atoms')
+
+
+def structural_relaxation(path_to_POSCAR, model_load_path, verbose=True, relax_cell=True):
+    """
+    Perform structural relaxation on a given structure.
+
+    Args:
+        path_to_POSCAR  (str):  Path to the input structure (POSCAR).
+        model_load_path (str):  Path to the pre-trained model for relaxation.
+        verbose         (bool): Verbosity of the relaxation process.
+        relax_cell      (bool): Whether to relax the lattice cell.
+
+    Returns:
+        poscar_relaxed (pymatgen structure): Relaxed structure saved as a POSCAR object.
+    """
+
+
+    # Load the structure to be relaxed
+    atoms_ini = Structure.from_file(f'{path_to_POSCAR}/POSCAR')
+
+    # Load the default pre-trained model
+    try:
+        pot = matgl.load_model(model_load_path)
+    except ValueError:
+        pot = matgl.load_model('M3GNet-MP-2021.2.8-PES')
+        pot.model.load(model_load_path)
+    
+    relaxer = Relaxer(potential=pot, relax_cell=relax_cell)
+
+    # Relax the structure
+    relax_atoms_ini = relaxer.relax(atoms_ini, verbose=verbose)
+    atoms = relax_atoms_ini['final_structure']
+
+    # Save the relaxed structure as a POSCAR file
+    poscar_relaxed = Poscar(atoms)
+    poscar_relaxed.write_file(f'{path_to_POSCAR}/CONTCAR')
+    return poscar_relaxed
+
+
+def single_shot_energy_calculations(path_to_structure, model_load_path):
+    """
+    Calculate the potential energy of a relaxed structure using a pre-trained model.
+
+    Args:
+        path_to_structure (str): Path to the relaxed structure (CONTCAR).
+        model_load_path   (str): Path to the pre-trained model for energy calculation.
+
+    Returns:
+        ssc_energy (float): Potential energy of the structure.
+    """
+    
+    # Load the relaxed structure
+    atoms = Structure.from_file(f'{path_to_structure}')
+    
+    # Load the default pre-trained model
+    pot = matgl.load_model(model_load_path)
+    relaxer = Relaxer(potential=pot)
+
+    # Define the M3GNet calculator
+    calc = M3GNetCalculator(pot)
+
+    # Load atoms adapter and adapt structure
+    ase_adaptor = AseAtomsAdaptor()
+    adapted_atoms = ase_adaptor.get_atoms(atoms)
+
+    # Calculate potential energy
+    adapted_atoms.set_calculator(calc)
+    
+    # Extract the energy
+    ssc_energy = float(adapted_atoms.get_potential_energy())
+    return ssc_energy
