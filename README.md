@@ -1,4 +1,4 @@
-# SlabOptimization: Crystal Surface Generator and Analyzer
+# SurfAIcing: Crystal Surface Generator and Analyzer
 
 SlabOptimization is a Python tool designed for the generation and analysis of crystal surfaces based on a given POSCAR (VASP input) structure. It utilizes the `pymatgen` library for crystal structure manipulation and slab generation, enabling researchers to explore and design materials with specific surface properties.
 
