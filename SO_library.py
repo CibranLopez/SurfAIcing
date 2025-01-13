@@ -1,19 +1,19 @@
 import numpy             as np
 import matplotlib.pyplot as plt
 import multiprocessing   as mp
-import pandas as pd
-import matgl
-import warnings
 import re
-import os
 import subprocess
 
-from sklearn.model_selection import learning_curve, train_test_split
-from sklearn.preprocessing   import StandardScaler
-from pymatgen.io.vasp.inputs import Poscar
-from pymatgen.core           import Structure
-from matgl.ext.ase           import M3GNetCalculator, Relaxer
-from pymatgen.io.ase         import AseAtomsAdaptor
+from sklearn.model_selection     import learning_curve
+from sklearn.preprocessing       import StandardScaler
+from mace.calculators            import mace_mp
+from ase.md                      import Langevin
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+from ase                         import units
+from ase.io.vasp                 import read_vasp, write_vasp
+from ase.optimize                import BFGS
+from ase.constraints             import ExpCellFilter
+import os
 
 linewidth    = 0.5
 footnotesize = 8
@@ -298,72 +298,138 @@ def generate_alloy_unitcell(substitutions_dict, path_to_alloy_folder, min_specie
     if n_atoms is not None: print(f'From {int(n_atoms)} to {int(np.power(replication_factor, 3) * n_atoms)} atoms')
 
 
-def structural_relaxation(path_to_POSCAR, model_load_path, verbose=True, relax_cell=True):
+def structural_relaxation(
+        path_to_structure,
+        model_load_path='large',
+        device='cuda',
+        dispersion=False,
+        relax_cell=True,
+        fmax=0.05):
     """
-    Perform structural relaxation on a given structure.
+    Perform structural relaxation of a molecular or crystalline structure.
 
-    Args:
-        path_to_POSCAR  (str):  Path to the input structure (POSCAR).
-        model_load_path (str):  Path to the pre-trained model for relaxation.
-        verbose         (bool): Verbosity of the relaxation process.
-        relax_cell      (bool): Whether to relax the lattice cell.
+    This function facilitates the relaxation of a structure file using a pre-trained
+    machine learning potential. The relaxation can be constrained to keep the simulation
+    cell fixed or allow the relaxation of both positions and the cell itself. The relaxed
+    structure is saved to a specified output directory.
+
+    Parameters:
+        path_to_structure (str): Path to the file containing the structure in VASP format.
+            This file serves as the input to the relaxation process.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+        device (str): Device to run the computations on, e.g., 'cuda' for GPU or
+            'cpu' for CPU. Default is 'cuda'.
+        dispersion (bool): Whether to include the D3 dispersion correction in the model.
+        relax_cell (bool): A boolean value indicating whether to relax the simulation cell
+            along with atomic positions. Defaults to True.
+        fmax (float): Maximum force tolerance in eV/Å for stopping the relaxation process.
+            Defaults to 0.05.
 
     Returns:
-        poscar_relaxed (pymatgen structure): Relaxed structure saved as a POSCAR object.
-    """
+        atoms (Atoms): ASE Atoms object representing the relaxed structure.
+"""
 
+    # Load the relaxed structure
+    atoms = read_vasp(file=path_to_structure)
 
-    # Load the structure to be relaxed
-    atoms_ini = Structure.from_file(f'{path_to_POSCAR}/POSCAR')
+    # Load the pre-trained model
+    atoms.calc = mace_mp(model=model_load_path, device=device, dispersion=dispersion, default_dtype='float32')
 
-    # Load the default pre-trained model
-    try:
-        pot = matgl.load_model(model_load_path)
-    except ValueError:
-        pot = matgl.load_model('M3GNet-MP-2021.2.8-PES')
-        pot.model.load(model_load_path)
-    
-    relaxer = Relaxer(potential=pot, relax_cell=relax_cell)
+    # Check wether to relax the cell
+    if relax_cell:
+        atoms = ExpCellFilter(atoms)
 
     # Relax the structure
-    relax_atoms_ini = relaxer.relax(atoms_ini, verbose=verbose)
-    atoms = relax_atoms_ini['final_structure']
-
-    # Save the relaxed structure as a POSCAR file
-    poscar_relaxed = Poscar(atoms)
-    poscar_relaxed.write_file(f'{path_to_POSCAR}/CONTCAR')
-    return poscar_relaxed
+    dyn = BFGS(atoms, trajectory=f'{path_to_structure}/run.traj')
+    dyn.run(fmax=fmax)
+    write_vasp(filename=f'{path_to_structure}/CONTCAR', atoms=atoms, direct=True)
+    return atoms
 
 
-def single_shot_energy_calculations(path_to_structure, model_load_path):
+def single_shot_energy_calculations(
+        path_to_structure,
+        model_load_path='large',
+        device='cuda',
+        dispersion=False
+):
     """
-    Calculate the potential energy of a relaxed structure using a pre-trained model.
+    Determine the energy, forces, and stress of a molecular structure using a pre-trained MACE model.
 
-    Args:
-        path_to_structure (str): Path to the relaxed structure (CONTCAR).
-        model_load_path   (str): Path to the pre-trained model for energy calculation.
+    This function loads a pre-trained molecular model, reads a relaxed molecular structure from a file,
+    and computes the potential energy, atomic forces, and stress tensor for the given molecular configuration.
+
+    Parameters:
+        path_to_structure (str): Path to the file containing the molecular structure
+            in VASP format.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+        device (str): Device to run the computations on, e.g., 'cuda' for GPU or
+            'cpu' for CPU. Default is 'cuda'.
+        dispersion (bool): Whether to include the D3 dispersion correction in the model.
 
     Returns:
-        ssc_energy (float): Potential energy of the structure.
+        float: The computed potential energy of the molecular structure.
+        numpy.ndarray: The computed forces on every atom in the molecular structure.
+        numpy.ndarray: The computed stress tensor of the molecular structure.
+
+    Raises:
+        ValueError: If the molecular structure file is invalid or cannot be read.
+        RuntimeError: If the MACE model fails to run the computations due to an
+            incompatible model or device.
     """
-    
+
     # Load the relaxed structure
-    atoms = Structure.from_file(f'{path_to_structure}')
-    
-    # Load the default pre-trained model
-    pot = matgl.load_model(model_load_path)
-    relaxer = Relaxer(potential=pot)
+    atoms = read_vasp(file=path_to_structure)
 
-    # Define the M3GNet calculator
-    calc = M3GNetCalculator(pot)
+    # Load the pre-trained model
+    atoms.calc = mace_mp(model=model_load_path, device=device, dispersion=dispersion, default_dtype='float32')
 
-    # Load atoms adapter and adapt structure
-    ase_adaptor = AseAtomsAdaptor()
-    adapted_atoms = ase_adaptor.get_atoms(atoms)
+    # Determine energy
+    energy = atoms.get_potential_energy()
+    forces = atoms.get_forces()
+    stress = atoms.get_stress()
+    return energy, forces, stress
 
-    # Calculate potential energy
-    adapted_atoms.set_calculator(calc)
-    
-    # Extract the energy
-    ssc_energy = float(adapted_atoms.get_potential_energy())
-    return ssc_energy
+
+def molecular_dynamics(
+        path_to_structure,
+        model_load_path='large',
+        device='cuda',
+        dispersion=False,
+        T_init=300,
+        time_step=1,
+        friction=0.001,
+        n_steps=200
+):
+    """
+    Conducts a molecular dynamics simulation on a given atomic structure using a pre-trained model
+    and Langevin dynamics for an NVT ensemble. Initializes atomic velocities based on a Maxwell-Boltzmann
+    distribution, applies the provided force field, and evolves the system for a specified number of steps.
+
+    Parameters:
+        path_to_structure (str): Path to the input atomic structure file in VASP format.
+        model_load_path (str, optional): Path or identifier to load the pre-trained model. Defaults to 'large'.
+        device (str, optional): Device used for computation, e.g., 'cuda' or 'cpu'. Defaults to 'cuda'.
+        dispersion (bool, optional): Specifies whether to include dispersion corrections in the model.
+            Defaults to False.
+        T_init (float, optional): Initial temperature in Kelvin. Defaults to 300.
+        time_step (float, optional): Timestep for the dynamics in femtoseconds. Defaults to 1.
+        friction (float, optional): Friction coefficient for Langevin dynamics. Defaults to 0.001.
+        n_steps (int, optional): Number of simulation steps. Defaults to 200.
+
+    Raises:
+        Various exceptions may occur during file reading, model initialization, or dynamics execution.
+    """
+
+    # Load the relaxed structure
+    atoms = read_vasp(file=path_to_structure)
+
+    # Load the pre-trained model
+    atoms.calc = mace_mp(model=model_load_path, device=device, dispersion=dispersion, default_dtype='float32')
+    # macemp = mace_mp() # return a model with D3 dispersion correction
+
+    # Initialize velocities.
+    MaxwellBoltzmannDistribution(atoms, T_init * units.kB)
+
+    # Set up the Langevin dynamics engine for NVT ensemble.
+    dyn = Langevin(atoms, time_step * units.fs, T_init * units.kB, friction)
+    dyn.run(n_steps)
