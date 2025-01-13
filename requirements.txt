@@ -2,4 +2,4 @@ numpy
 matgl
 dgl
 ase
-mace
+mace-torch
