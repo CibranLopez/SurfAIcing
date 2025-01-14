@@ -3,3 +3,4 @@ matgl
 dgl
 ase
 mace-torch
+seaborn
