@@ -5,7 +5,7 @@ import re
 import subprocess
 import os
 
-from mace.calculators            import mace_mp
+#from mace.calculators            import mace_mp
 from ase.md                      import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase                         import units
