@@ -4,3 +4,4 @@ dgl
 ase
 mace-torch
 seaborn
+pymatgen
