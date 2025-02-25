@@ -7,10 +7,6 @@ from ase.optimize                import BFGS
 from ase.constraints             import ExpCellFilter
 
 
-linewidth    = 0.5
-footnotesize = 8
-
-
 def structural_relaxation(
         path_to_structure,
         model_load_path='large',

@@ -1,21 +1,5 @@
 import numpy             as np
 import matplotlib.pyplot as plt
-import multiprocessing   as mp
-import re
-import subprocess
-import os
-
-from mace.calculators            import mace_mp
-from ase.md                      import Langevin
-from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-from ase                         import units
-from ase.io.vasp                 import read_vasp, write_vasp
-from ase.optimize                import BFGS
-from ase.constraints             import ExpCellFilter
-
-
-linewidth    = 0.5
-footnotesize = 8
 
 
 def plot_ranking(
