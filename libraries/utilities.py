@@ -49,3 +49,18 @@ def load_json(
     with open(filename, 'r') as json_file:
         slab_data = json.load(json_file)
     return slab_data
+
+
+def get_surface_energy_of_formation(
+        ssc_energy_per_atom,
+        bulk_energy_per_atom,
+        surface_area
+):
+    """Compute the surface energy of formation according to:
+
+    Args:
+
+    Returns:
+
+    """
+    return (ssc_energy_per_atom - bulk_energy_per_atom) / (2 * surface_area)
