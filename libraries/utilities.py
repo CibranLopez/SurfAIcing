@@ -3,6 +3,8 @@ import libraries.model as slm
 import json
 import os
 
+from pymatgen.io.vasp.inputs import Kpoints
+from pymatgen.core.structure import Structure
 
 # Save slab information
 def save_json(
@@ -69,6 +71,33 @@ def get_surface_energy_of_formation(
     return (ssc_energy_per_atom - bulk_energy_per_atom) / (2 * surface_area)
 
 
+def relax_structure(
+        poscar_file='POSCAR',
+        model_load_path='large',
+        relax_cell=False,
+        output_folder='.'
+):
+    """Relax a structure.
+
+    Args:
+        poscar_file (str): Path to the POSCAR file.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+        relax_cell (bool): Whether to relax the cell. Default is False.
+        output_folder (str): Path to the output folder.
+
+    Returns:
+        None
+    """
+    # Call MACE relaxer
+    try:
+        _ = slm.structural_relaxation(poscar_file,
+                                      model_load_path,
+                                      relax_cell=relax_cell,
+                                      output_folder=output_folder)
+    except:
+        print('Error loading model')
+        pass
+
 def read_energy(
         folder,
         model_load_path='large'
@@ -92,12 +121,41 @@ def read_energy(
     elif os.path.exists(f'{folder}/single_shot_energy'):
         ssc_energy = np.loadtxt(f'{folder}/single_shot_energy')
     elif os.path.exists(f'{folder}/CONTCAR') or os.path.exists(f'{folder}/POSCAR'):
-        if not os.path.exists(f'{folder}/CONTCAR'):
-            _ = slm.structural_relaxation(f'{folder}/POSCAR',
-                                          model_load_path,
-                                          relax_cell=False,
-                                          output_folder=folder)
+        try:
+            if not os.path.exists(f'{folder}/CONTCAR'):
+                _ = slm.structural_relaxation(f'{folder}/POSCAR',
+                                              model_load_path,
+                                              relax_cell=False,
+                                              output_folder=folder)
 
-        ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
-                                                              model_load_path)
+            ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
+                                                                  model_load_path)
+        except:
+            print('Error loading model')
+            pass
     return ssc_energy
+
+
+def generate_kpoints(
+        poscar_file='POSCAR',
+        kpoints_file='KPOINTS',
+        kpoints_density=[20, 20, 20]
+):
+    """Generate a KPOINTS file with a given density based on a POSCAR file.
+
+    Args:
+        poscar_file     (str):  Path to the POSCAR file.
+        kpoints_file    (str):  Path to the KPOINTS file.
+        kpoints_density (list): K-points density.
+
+    Returns:
+        None
+    """
+    # Read the structure
+    structure = Structure.from_file(poscar_file)
+
+    # Calculate the K-points grid based on the given density
+    kpoints = Kpoints.automatic_density_by_lengths(structure, kpoints_density)
+
+    # Write the modified KPOINTS file
+    kpoints.write_file(kpoints_file)
