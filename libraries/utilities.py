@@ -1,4 +1,7 @@
+import numpy           as np
+import libraries.model as slm
 import json
+import os
 
 
 # Save slab information
@@ -64,3 +67,37 @@ def get_surface_energy_of_formation(
 
     """
     return (ssc_energy_per_atom - bulk_energy_per_atom) / (2 * surface_area)
+
+
+def read_energy(
+        folder,
+        model_load_path='large'
+):
+    """Read the energy of a structure from a given folder.
+
+    Args:
+        folder (str): Path to the folder containing the structure.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+
+    Returns:
+        ssc_energy (float): Single-shot energy of the structure
+    """
+    ssc_energy = np.nan
+    if os.path.exists(f'{folder}/vasprun.xml'):
+        try:
+            ssc_energy = Vasprun(f'{folder}/vasprun.xml').final_energy
+        except:
+            print(f'Error reading vasprun.xml at {folder}')
+            pass
+    elif os.path.exists(f'{folder}/single_shot_energy'):
+        ssc_energy = np.loadtxt(f'{folder}/single_shot_energy')
+    elif os.path.exists(f'{folder}/CONTCAR') or os.path.exists(f'{folder}/POSCAR'):
+        if not os.path.exists(f'{folder}/CONTCAR'):
+            _ = slm.structural_relaxation(f'{folder}/POSCAR',
+                                          model_load_path,
+                                          relax_cell=False,
+                                          output_folder=folder)
+
+        ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
+                                                              model_load_path)
+    return ssc_energy
