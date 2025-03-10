@@ -4,6 +4,7 @@ import json
 import os
 
 from pymatgen.io.vasp.inputs import Kpoints
+from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core.structure import Structure
 
 # Save slab information
@@ -97,6 +98,7 @@ def relax_structure(
     except:
         print('Error loading model')
         pass
+
 
 def read_energy(
         folder,
