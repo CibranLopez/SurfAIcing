@@ -6,7 +6,8 @@ def plot_ranking(
     surface_energies_of_formation,
     filename='ranking.eps',
     figsize=(15, 5),
-    ylabel=r'$E_{surface}$ (eV/atom/Å^2)'
+    ylabel=r'$E_{\text{surface}}$ (eV/atom/Å$^2$)',
+    dpi=50
 ):
     """Plot the ranking of the slabs based on their energy differences.
 
@@ -29,5 +30,5 @@ def plot_ranking(
     plt.plot(energies, 'o-')
     plt.xticks(range(len(local_minima)), local_minima, rotation='vertical')
     plt.ylabel(ylabel)
-    plt.savefig(filename, dpi=50, bbox_inches='tight')
+    plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     plt.show()

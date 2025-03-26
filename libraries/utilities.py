@@ -64,12 +64,22 @@ def get_surface_energy_of_formation(
 ):
     """Compute the surface energy of formation according to:
 
+    \begin{equation}
+        E_{surface} = \frac{E_{slab} - E_{bulk}}{2 S}
+    \end{equation}
+
+    where all energies are per atom, in units of J/m^2/atom.
+
     Args:
+        ssc_energy_per_atom (float): Single-shot energy per atom.
+        bulk_energy_per_atom (float): Bulk energy per atom.
+        surface_area (float): Surface area.
 
     Returns:
+        surface_energy_of_formation (float): Surface energy of formation.
 
     """
-    return (ssc_energy_per_atom - bulk_energy_per_atom) / (2 * surface_area)
+    return (ssc_energy_per_atom - bulk_energy_per_atom) * 16.0218 / (2 * surface_area)
 
 
 def relax_structure(
