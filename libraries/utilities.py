@@ -58,8 +58,8 @@ def load_json(
 
 
 def get_surface_energy_of_formation(
-        ssc_energy_per_atom,
-        bulk_energy_per_atom,
+        slab_energy,
+        bulk_energy_times_fu,
         surface_area
 ):
     """Compute the surface energy of formation according to:
@@ -79,7 +79,7 @@ def get_surface_energy_of_formation(
         surface_energy_of_formation (float): Surface energy of formation.
 
     """
-    return (ssc_energy_per_atom - bulk_energy_per_atom) * 16.0218 / (2 * surface_area)
+    return (slab_energy - bulk_energy_times_fu) * 16.0218 / (2 * surface_area)
 
 
 def relax_structure(
