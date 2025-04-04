@@ -140,7 +140,7 @@ def read_energy(
                                               relax_cell=False,
                                               output_folder=folder)
 
-            ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
+            ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/POSCAR',
                                                                   model_load_path)
         except:
             print('Error loading model')
