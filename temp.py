@@ -1,8 +1,23 @@
 from skopt import gp_minimize
 
+from ase.build import stack
+from ase.io import read
+
+# Load two slabs (e.g., from CIFs or pymatgen)
+slab1 = read("MoS2.cif")
+slab2 = read("WS2.cif")
+
+
 def energy_function(angle, distance):
-    heterostructure = generate_heterostructure(angle, distance)
-    return compute_energy(heterostructure)  # Replace with ML/DFT energy
+    
+    # Stack with a 30° rotation and 5Å vacuum
+    heterostructure = stack(slab1, slab2, axis=2, rotate=30, vacuum=5.0)
+
+    save heterostructure
+
+    energy = sol.read_energy(path to heterostructure)
+
+    return energy
 
 res = gp_minimize(
     energy_function,
