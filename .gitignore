@@ -4,4 +4,4 @@ __pycache__
 .venv
 input
 output
-POSCAR*
+MACE_MPtrj*
