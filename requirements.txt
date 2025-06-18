@@ -5,3 +5,4 @@ ase
 mace-torch
 seaborn
 pymatgen
+openpyxl
