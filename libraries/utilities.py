@@ -148,6 +148,24 @@ def read_energy(
     return ssc_energy
 
 
+def read_volume(
+        folder
+):
+    """Read the volume of a structure from a given folder.
+
+    Args:
+        folder (str): Path to the folder containing the structure.
+
+    Returns:
+        volume (float): Volume of the structure.
+    """
+    try:
+        return Vasprun(f'{folder}/vasprun.xml').final_structure.volume
+    except:
+        print(f'Error reading vasprun.xml at {folder}')
+        pass
+
+
 def generate_kpoints(
         poscar_file='POSCAR',
         kpoints_file='KPOINTS',
