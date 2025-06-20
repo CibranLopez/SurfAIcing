@@ -166,6 +166,24 @@ def read_volume(
         pass
 
 
+def read_lattice_vectors(
+        folder
+):
+    """Read the lattice vectors of a structure from a given folder.
+
+    Args:
+        folder (str): Path to the folder containing the structure.
+
+    Returns:
+        volume (float): Volume of the structure.
+    """
+    try:
+        return Vasprun(f'{folder}/vasprun.xml').final_structure.lattice.matrix
+    except:
+        print(f'Error reading vasprun.xml at {folder}')
+        pass
+
+
 def generate_kpoints(
         poscar_file='POSCAR',
         kpoints_file='KPOINTS',
