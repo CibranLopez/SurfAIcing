@@ -30,6 +30,6 @@ def plot_ranking(
     plt.plot(energies, 'o-')
     plt.xticks(range(len(local_minima)), local_minima, rotation='vertical')
     plt.ylabel(ylabel)
-    plt.ylim(0, 1)
+    #plt.ylim(0, 1)
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     plt.show()
