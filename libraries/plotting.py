@@ -25,10 +25,18 @@ def plot_ranking(
     local_minima = surface_energies_of_formation.columns[min_arg]
     energies     = surface_energies_of_formation.values[0][min_arg]
 
+    hkl = []
+    for label in local_minima:
+        h, k, l, _, i = label.split('_')
+        if int(i) < 10:
+            i = '0' + i
+        hkl.append(f'$\\mathregular{{[{h}{k}{l}]_{{{i}}}}}$')
+
     # Energy differences in eV/supercell
     plt.figure(figsize=figsize)
     plt.plot(energies, 'o-')
-    plt.xticks(range(len(local_minima)), local_minima, rotation='vertical')
+    plt.xlim(-0.5, len(hkl)-1+0.5)
+    plt.xticks(range(len(hkl)), hkl, rotation='vertical')
     plt.ylabel(ylabel)
     #plt.ylim(0, 1)
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
