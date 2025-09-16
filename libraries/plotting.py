@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 def plot_ranking(
     surface_energies_of_formation,
     filename='ranking.eps',
-    figsize=(15, 5),
+    figsize=(10, 5),
     ylabel=r'$E_{\text{surface}}$ (eV/atom/Å$^2$)',
     dpi=50
 ):
@@ -35,9 +35,9 @@ def plot_ranking(
     # Energy differences in eV/supercell
     plt.figure(figsize=figsize)
     plt.plot(energies, 'o-')
-    plt.xlim(-0.5, len(hkl)-1+0.5)
+    plt.xlim(-0.2, len(hkl)-1+0.2)
     plt.xticks(range(len(hkl)), hkl, rotation='vertical')
     plt.ylabel(ylabel)
-    #plt.ylim(0, 1)
+    plt.ylim(0, 0.45)
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     plt.show()
