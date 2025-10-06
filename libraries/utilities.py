@@ -29,7 +29,8 @@ def save_json(
             'surface_area': slab.surface_area,
             'number_of_sites': len(slab.sites),
             'is_polar': str(slab.is_polar()),
-            'is_symmetric': str(slab.is_symmetric())
+            'is_symmetric': str(slab.is_symmetric()),
+            'name': slab.miller_index
         }
     elif data == 'bulk':
         slab_data = {
