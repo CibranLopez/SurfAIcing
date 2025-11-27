@@ -13,6 +13,7 @@ def structural_relaxation(
         device='cuda',
         dispersion=False,
         relax_cell=True,
+        constant_volume=False,
         fmax=0.05,
         output_folder='./'
 ):
@@ -29,6 +30,8 @@ def structural_relaxation(
             model_load_path   (str):   Path to the pre-trained model.
             relax_cell        (bool):  A boolean value indicating whether to relax the simulation cell
                 along with atomic positions. Defaults to True.
+            constant_volume   (bool):  A boolean value indicating whether maintain the simulation cell
+                volume fixed. Defaults to False.
             fmax              (float): Maximum force tolerance in eV/Å for stopping the relaxation process.
                 Defaults to 0.05.
 
@@ -44,7 +47,7 @@ def structural_relaxation(
 
     # Check whether to relax the cell
     if relax_cell:
-        atoms = ExpCellFilter(atoms)
+        atoms = ExpCellFilter(atoms, constant_volume=False)
 
     # Relax the structure
     dyn = BFGS(atoms, trajectory=f'{output_folder}/run.traj')
