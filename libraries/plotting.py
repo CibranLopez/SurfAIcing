@@ -27,9 +27,13 @@ def plot_ranking(
 
     hkl = []
     for label in local_minima:
-        h, k, l, _, i = label.split('_')
-        if int(i) < 10:
-            i = '0' + i
+        sp = label.split('_')
+        if len(sp) == 5:
+            h, k, l, _, i = sp
+            if int(i) < 10:
+                i = '0' + i
+        else:
+            h, k, l, i = sp
         hkl.append(f'$\\mathregular{{({h}{k}{l})_{{{i}}}}}$')
 
     # Energy differences in eV/supercell

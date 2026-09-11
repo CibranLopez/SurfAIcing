@@ -4,7 +4,7 @@ from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase                         import units
 from ase.io.vasp                 import read_vasp, write_vasp
 from ase.optimize                import BFGS
-from ase.constraints             import ExpCellFilter
+from ase.filters                 import ExpCellFilter
 
 
 def structural_relaxation(
