@@ -2,34 +2,32 @@
 title: 'SurfAIcing: A Python Workflow for Machine-Learning-Accelerated Surface, Interface, and Adsorption Energetics'
 tags:
   - Python
-  - materials science
-  - condensed matter physics
-  - density functional theory
-  - machine learning interatomic potentials
-  - surface science
-  - photocatalysis
-  - photovoltaics
-  - VASP
+  - Materials science
+  - Condensed matter physics
+  - Photocatalysis
+  - Photovoltaics
 authors:
-  - name: Cibrán López Álvarez
+  - name: Cibrán López
     orcid: 0000-0003-3949-5058
+    corresponding: true
     affiliation: "1, 2"
   - name: Claudio Cazorla
+    orcid: 0000-0002-6501-4513
     affiliation: "1, 2, 3"
 affiliations:
-  - name: Departament de Física, Universitat Politècnica de Catalunya, 08034 Barcelona, Spain
-    index: 1
-  - name: Research Center in Multiscale Science and Engineering, Universitat Politècnica de Catalunya, Campus Diagonal-Besòs, 08019 Barcelona, Spain
-    index: 2
-  - name: Institució Catalana de Recerca i Estudis Avançats (ICREA), Passeig Lluís Companys 23, 08010 Barcelona, Spain
-    index: 3
+ - name: Departament de Física, Universitat Politècnica de Catalunya, 08034 Barcelona, Spain
+   index: 1
+ - name: Research Center in Multiscale Science and Engineering, Universitat Politècnica de Catalunya, Campus Diagonal-Besòs, Av. Eduard Maristany 10-14, 08019 Barcelona, Spain
+   index: 2
+ - name: Institució Catalana de Recerca i Estudis Avançats (ICREA), Passeig Lluís Companys 23, 08010 Barcelona, Spain
+   index: 3
 date: 11 September 2026
 bibliography: paper.bib
 ---
 
 # Summary
 
-Surfaces and interfaces control many of the properties that make a material useful in a device: how a battery electrode degrades, how a solar absorber loses electrons to a contact layer, or how a catalyst activates a reactant molecule. Predicting these properties from first principles usually starts by cutting a bulk crystal along many possible orientations (Miller indices) and terminations, since a real sample exposes whichever surface is thermodynamically most stable, and comparing the resulting slabs' energies. `SurfAIcing` automates this screening step and several of the calculations that typically build on it: generating and ranking candidate surface slabs, building coherent heterostructure interfaces between two materials, computing hydrogen adsorption energies on a chosen surface, and aligning valence and conduction band edges to the vacuum level so that surfaces of different materials, or different facets of the same material, can be compared on a common energy scale. Each of these steps can fall back to a fast machine-learned interatomic potential (MLIAP) when high-accuracy density functional theory (DFT) results are not yet available, allowing hundreds of candidate slabs, terminations, or interfaces to be pre-screened before committing DFT time to the most promising ones. The resulting quantities — surface stability, adsorption energetics, and vacuum-referenced band edges — are exactly the ingredients needed to design photocatalytic surfaces and photovoltaic device interfaces.
+Surfaces and interfaces control many of the properties that make a material useful in a device: how a battery electrode degrades, how a solar absorber loses electrons to a contact layer, or how a catalyst activates a reactant molecule. Predicting these properties from first principles usually starts by cutting a bulk crystal along many possible orientations (Miller indices) and terminations, since a real sample exposes whichever surface is thermodynamically most stable, and comparing the resulting slabs' energies. `SurfAIcing` automates this screening step and several of the calculations that typically build on it: generating and ranking candidate surface slabs, building coherent heterostructure interfaces between two materials, computing hydrogen adsorption energies on a chosen surface, and aligning valence and conduction band edges to the vacuum level so that surfaces of different materials, or different facets of the same material, can be compared on a common energy scale. Each of these steps can fall back to a fast machine-learned interatomic potential (MLIAP) when high-accuracy density functional theory (DFT) results are not yet available, allowing hundreds of candidate slabs, terminations, or interfaces to be pre-screened before committing DFT time to the most promising ones. The resulting quantities — surface stability, adsorption energetics, and vacuum-referenced band edges — are exactly the ingredients needed to design photocatalytic surfaces and photovoltaic 
 
 # Statement of need
 
@@ -39,7 +37,7 @@ Surface-energy screening is combinatorially expensive: a single bulk structure c
 
 This combination is aimed squarely at two application areas where the relevant surface or interface is rarely known in advance. In heterogeneous catalysis and photocatalysis, activity and selectivity are set by which facet is exposed, how strongly a reactant adsorbs on it, and whether its band edges straddle the redox potentials of the target reaction (e.g. proton or CO$_2$ reduction, water oxidation); screening these properties across many candidate terminations at DFT cost alone is usually prohibitive. In photovoltaics, device efficiency depends on aligning an absorber's band edges with those of its selective contacts, and increasingly on engineering the interface between two absorber compositions or phases directly, so that charge is extracted rather than lost to recombination. `SurfAIcing` was built to make both kinds of screening — surface/adsorption energetics and interface band alignment — tractable across the large compositional and orientational spaces that these problems typically involve. The result is a single, consistent pipeline that a researcher can use to: (1) rank candidate surfaces of a material by formation energy; (2) build heterostructure interfaces between two slabs; (3) estimate hydrogen adsorption energies on a chosen surface; and (4) compute ionization potentials and electron affinities via vacuum-referenced band alignment.
 
-# Functionality
+# SurfAIcing
 
 **Bulk relaxation and slab generation.** Starting from a single bulk structure file, `SurfAIcing` relaxes the bulk cell — either with the MLIAP (cell and atomic-position relaxation via an `ASE` `ExpCellFilter`/BFGS optimizer) or by accepting a pre-relaxed DFT structure — and then uses `pymatgen`'s `generate_all_slabs` to enumerate every symmetrically distinct slab up to a user-defined maximum Miller index, for user-set minimum slab and vacuum thicknesses, optionally repairing terminations that would otherwise expose broken bonds. For every resulting slab, `SurfAIcing` records its Miller index, termination shift, surface area, atom count, and polarity/symmetry flags, writes it out as a VASP structure file, and generates a matching k-point mesh at a user-specified reciprocal-space density, so each candidate surface arrives ready for either DFT or MLIAP evaluation.
 
@@ -49,12 +47,13 @@ This combination is aimed squarely at two application areas where the relevant s
 
 **Vacuum-referenced band alignment.** `SurfAIcing` implements the planar/macroscopic-average electrostatic potential method for aligning electronic energy levels to the vacuum level. For the bulk structure, it reads the local electrostatic potential, computes its planar average along the surface normal, and reduces it to a macroscopic reference value, while the valence-band maximum (VBM) and band gap are extracted directly from the bulk band structure. For each slab, the planar-averaged potential is split into a bulk-like region and a vacuum region (discarding a user-set fraction near each region's edges to avoid boundary artifacts), and the mean potential in each region is computed. The VBM is then referenced to that slab's own vacuum level by combining the bulk VBM with the bulk-like and vacuum potential offsets, and adding the band gap gives the conduction-band minimum (CBM). This yields ionization potentials and electron affinities that can be directly compared across compositions, facets, and materials — the quantity used to assess photocatalytic redox-potential straddling and photovoltaic contact alignment in a recent application of the software [@lopez2026bandedge].
 
-**Heterostructure and interface generation.** *(This section is a placeholder pending finalization of the workflow, at the author's request — the core interface-building step below is implemented; the automated selection/optimization procedure is still being developed.)* `SurfAIcing` builds coherent heterostructure interfaces between two independently generated slabs, for user-specified Miller indices and terminations on each side, using `pymatgen`'s lattice-matching algorithm [@zur1984lattice] and an optional in-plane twist rotation between the two components. [Further automated selection of interface termination, twist angle, and interlayer spacing — minimizing an MLIAP-computed interface energy — is in development and will be described here once finalized.]
+**Heterostructure and interface generation.** `SurfAIcing` builds coherent heterostructure interfaces directly from two independently generated slabs (e.g. the output of the slab-generation step above), without needing either parent bulk cell again. The Zur–McGill lattice-matching algorithm [@zur1984lattice] is applied directly to the two slabs' in-plane lattices to find coincidence supercells, and the film is optionally pre-rotated about the interface normal before matching to scan a twist angle: since a different rotation generally exposes a different, largely non-overlapping set of coincidence matches, this is the same mechanism used to generate moiré/twisted-bilayer structures. For each sampled angle, the lowest-strain matches are kept, ranked by the von Mises strain of the coincidence-lattice deformation, and the corresponding film and substrate supercells are built; for each match, symmetry-distinct in-plane registries (lateral stacking offsets) are enumerated and combined with a small grid of interlayer gaps. Sampling angles, matches, registries, and gaps this way produces a controlled, finite set of inequivalent candidate interfaces — mirroring how the slab-generation step enumerates inequivalent surfaces — capped and evenly subsampled to a user-set total when their product would otherwise be too large. Relaxing and ranking these candidates with the MLIAP is an optional, separate step: when enabled, `SurfAIcing` computes an adhesion energy of formation for each candidate, $E_{\text{adhesion}} = (E_{\text{interface}} - E_{\text{film}} - E_{\text{substrate}})/A$, analogous to the surface energy of formation above but normalized per interface rather than per pair of free surfaces, using the same DFT/MLIAP-agnostic energy lookup as the other modules, so that the generated interfaces can equally well be handed to DFT directly instead.
 
 `SurfAIcing` has already been used to generate the surfaces and compute the vacuum-referenced band alignments underlying a systematic study of band-edge engineering in pnictogen chalcohalide (MChX) solid solutions for photocatalytic and photovoltaic applications [@lopez2026bandedge], which itself builds on earlier machine-learning-aided first-principles predictions of MChX optoelectronic properties [@lopez2024mlaided].
 
 # Acknowledgements
 
-The authors thank Edgardo Saucedo for helpful discussions during the development of this software.
+C.C. acknowledges support by MICIN/AEI/10.13039/501100011033 and ERDF/EU under the grants CNS2025-165467, PID2023-146623NB-I00 and PID2023-147469NB-C21 and by the Generalitat de Catalunya under the grants 2021SGR-00343, 2021SGR-01519 and 2021SGR-01411. Computational support was provided by the Red Española de Supercomputación under the grants FI-2024-1-0005, FI-2024-2-0003, FI-2024-3-0004, FI-2024-1-0025, FI-2024-2-0006, and FI-2025-1-0015. This work is part of the Maria de Maeztu Units of Excellence Programme CEX2023-001300-M funded by MCIN/AEI (10.13039/501100011033). C.L. acknowledges support from the Renew-PV European COST action (CA21148).
 
 # References
+
