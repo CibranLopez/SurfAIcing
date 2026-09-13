@@ -87,7 +87,8 @@ def relax_structure(
         poscar_file='POSCAR',
         model_load_path='large',
         relax_cell=False,
-        output_folder='.'
+        output_folder='.',
+        device='cuda'
 ):
     """Relax a structure.
 
@@ -96,6 +97,7 @@ def relax_structure(
         model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
         relax_cell (bool): Whether to relax the cell. Default is False.
         output_folder (str): Path to the output folder.
+        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cuda'.
 
     Returns:
         None
@@ -104,6 +106,7 @@ def relax_structure(
     try:
         _ = slm.structural_relaxation(poscar_file,
                                       model_load_path,
+                                      device=device,
                                       relax_cell=relax_cell,
                                       output_folder=output_folder)
     except:
@@ -113,13 +116,15 @@ def relax_structure(
 
 def read_energy(
         folder,
-        model_load_path='large'
+        model_load_path='large',
+        device='cuda'
 ):
     """Read the energy of a structure from a given folder.
 
     Args:
         folder (str): Path to the folder containing the structure.
         model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cuda'.
 
     Returns:
         ssc_energy (float): Single-shot energy of the structure
@@ -138,11 +143,13 @@ def read_energy(
             if not os.path.exists(f'{folder}/CONTCAR'):
                 _ = slm.structural_relaxation(f'{folder}/POSCAR',
                                               model_load_path,
+                                              device=device,
                                               relax_cell=False,
                                               output_folder=folder)
 
             ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
-                                                                  model_load_path)
+                                                                  model_load_path,
+                                                                  device=device)
         except:
             print('Error loading model')
             pass
