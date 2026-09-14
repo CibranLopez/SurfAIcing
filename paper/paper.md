@@ -31,15 +31,15 @@ Surfaces and interfaces determine many of the properties that make materials use
 
 # Statement of need
 
-Surface-energy screening is combinatorially expensive. A single bulk structure can yield tens to hundreds of distinct slabs when multiple Miller indices and terminations are considered. Traditionally, each candidate requires an independent first-principles relaxation before the thermodynamically favored surfaces can be identified. Existing tools such as Surfaxe [@brlec2021surfaxe], built on pymatgen [@ong2013pymatgen], streamline this process by automating slab generation, first-principles input preparation, and post-processing. These capabilities include calculating the planar-averaged electrostatic potential for band alignment, which is also implemented in SurfAIcing. These tools, however, assume that every candidate slab will ultimately be evaluated at first-principles level, which is often the actual bottleneck in practice.
+Surface-energy screening is combinatorially expensive. A single bulk structure can yield tens to hundreds of distinct slabs when multiple Miller indices and terminations are considered. Traditionally, each candidate requires an independent first-principles relaxation before the thermodynamically favored surfaces can be identified. Existing tools such as Surfaxe [@brlec2021surfaxe], built on pymatgen [@ong2013pymatgen], streamline this process by automating slab generation, first-principles input preparation, and post-processing. These capabilities include calculating the planar-averaged electrostatic potential for band alignment, which is also implemented in `SurfAIcing`. These tools, however, assume that every candidate slab will ultimately be evaluated at first-principles level, which is often the actual bottleneck in practice.
 
 `SurfAIcing` targets this bottleneck directly. It combines pymatgen-based slab and coherent-interface generation [@zur1984lattice] with machine-learning interatomic potentials (ML-IAPs), such as the MACE-MP-0 foundation model [@batatia2024foundation], accessed through ASE [@larsen2017ase]. Surface energies, relaxed geometries, and single-point energies for adsorption or band-alignment calculations can therefore be obtained using ML-IAPs when a fast estimate is sufficient. These calculations can subsequently be replaced by first-principles results, parsed from VASP's [@kresse1996] vasprun.xml and LOCPOT files, without changing the analysis workflow.
 
-This combination is particularly useful in application areas where the relevant surface or interface is rarely known in advance. In heterogeneous catalysis and photocatalysis, activity and selectivity depend on the exposed facet, the strength of reactant adsorption, and whether the band edges straddle the redox potentials of the target reaction (e.g., proton or CO$_2$ reduction and water oxidation). Screening these properties across many candidate terminations at ab initio cost alone is often prohibitive.
+This combination is particularly useful in application areas where the relevant surface or interface is rarely known in advance. In heterogeneous catalysis and photocatalysis, activity and selectivity depend on the exposed facet, the strength of reactant adsorption, and whether the band edges straddle the redox potentials of the target reaction (e.g., proton or CO$_2$ reduction and water oxidation). Screening these properties across many candidate terminations at _ab initio_ cost alone is often prohibitive.
 
 In photovoltaics, device efficiency depends on aligning an absorber's band edges with those of its selective contacts. It also increasingly requires engineering interfaces between different absorber compositions or phases to promote charge extraction and suppress recombination.
 
-SurfAIcing was developed to make both types of screening—surface and adsorption energetics, and interface band alignment—tractable across the large compositional and orientational spaces involved. The resulting pipeline can be used to (1) rank candidate surfaces by formation energy; (2) construct heterostructure interfaces between two slabs; (3) estimate hydrogen adsorption energies on a selected surface; and (4) compute ionization potentials and electron affinities through vacuum-referenced band alignment.
+`SurfAIcing` was developed to make both types of screening, surface and adsorption energetics, and interface band alignment—tractable across the large compositional and orientational spaces involved. The resulting pipeline can be used to (1) rank candidate surfaces by formation energy; (2) construct heterostructure interfaces between two slabs; (3) estimate hydrogen adsorption energies on a selected surface; and (4) compute ionization potentials and electron affinities through vacuum-referenced band alignment.
 
 # SurfAIcing
 
@@ -49,7 +49,7 @@ Terminations can optionally be repaired when the generated slabs would otherwise
 
 **Hybrid ML-IAP/DFT surface-energy ranking.**
 
-For each generated slab, `SurfAIcing` first checks whether a completed DFT calculation is available. If not, it relaxes the structure using the same ML-IAP used for the bulk and evaluates a single-point energy. ML-IAP- and DFT-evaluated slabs can therefore be combined in the same ranking without modifying the analysis code. The surface formation energy is calculated from the slab energy, the bulk energy per formula unit, and the surface area, following the standard thermodynamic definition (the energy cost per unit area of exposing two free surfaces):
+For each generated slab, `SurfAIcing` first checks whether a completed DFT calculation is available. If not, it relaxes the structure using the same ML-IAP used for the bulk and evaluates a single-point energy. ML-IAP- and DFT-evaluated slabs can therefore be combined in the same ranking without modifying the analysis code. The surface formation energy is calculated from the slab energy, the bulk energy per formula unit, and the surface area, following the standard thermodynamic definition (the energy cost per unit area of exposing two free surfaces) [@boettger1994]:
 
 $$
 \gamma_{\text{surf}} = \frac{E_{\text{slab}} - N E_{\text{bulk}}}{2A},
@@ -59,7 +59,7 @@ where $E_{\text{slab}}$ is the total energy of the relaxed slab, $E_{\text{bulk}
 
 **Hydrogen adsorption energetics.** For a selected surface, `SurfAIcing` evaluates multiple candidate hydrogen adsorption configurations, including different adsorption sites and orientations. Each configuration is matched to the bare reference surface through its lattice vectors, ensuring that all candidates use a consistent supercell. The lowest-energy configuration is retained.
 
-Adsorption energies are calculated by subtracting the replica-scaled bare-surface energy and the appropriate reference energy. a free H atom or half the energy of a free H$_2$ molecule, from the energy of the adsorbed configuration:
+Adsorption energies are calculated by subtracting the replica-scaled bare-surface energy and the appropriate reference energy. a free H atom or half the energy of a free H$_2$ molecule, from the energy of the adsorbed configuration [@norskov2004]:
 
 $$
 \Delta E_{\text{ads}} = E_{\text{conf}} - \left(n\, E_{\text{surf}} + E_{\text{ref}}\right),
@@ -72,7 +72,7 @@ where $E_{\text{conf}}$ is the energy of the retained (lowest-energy) adsorption
 
 For the bulk structure, the local electrostatic potential is read and averaged along the surface normal to obtain a macroscopic reference value. The valence-band maximum (VBM) and band gap are extracted directly from the bulk band structure.
 
-For each slab, the planar-averaged potential is divided into bulk-like and vacuum regions. A user-defined fraction near the boundaries of each region is discarded to avoid edge artifacts, and the mean potential is calculated in both regions. The slab VBM relative to vacuum is then obtained as:
+For each slab, the planar-averaged potential is divided into bulk-like and vacuum regions. A user-defined fraction near the boundaries of each region is discarded to avoid edge artifacts, and the mean potential is calculated in both regions. The slab VBM relative to vacuum is then obtained as [@liu2022piezo]:
 
 $$
 \text{VBM}_{\text{vac}} = \text{VBM}_{\text{DFT}} + \left(\bar{V}_{\text{bulk-like}} - \bar{V}_{\text{bulk}}\right) - \bar{V}_{\text{vac}}, \qquad \text{CBM}_{\text{vac}} = \text{VBM}_{\text{vac}} + E_{\text{gap}},
@@ -89,7 +89,7 @@ The film can optionally be rotated about the interface normal before lattice mat
 
 For each match, symmetry-distinct in-plane registries (lateral stacking offsets) are enumerated and combined with a small grid of interlayer gaps. The resulting candidate set is capped and evenly subsampled to a user-defined total when necessary.
 
-Relaxation and ranking with an ML-IAP are optional. When enabled, SurfAIcing calculates the adhesion energy of formation,
+Relaxation and ranking with an ML-IAP are optional. When enabled, `SurfAIcing` calculates the adhesion energy of formation [@bjorkman2012]:
 
 $$
 E_{\text{adhesion}} = \frac{E_{\text{interface}} - E_{\text{film}} - E_{\text{substrate}}}{A},
