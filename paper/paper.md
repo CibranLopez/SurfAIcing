@@ -62,7 +62,7 @@ where $E_{\text{slab}}$ is the total energy of the relaxed slab, $E_{\text{bulk}
 Adsorption energies are calculated by subtracting the replica-scaled bare-surface energy and the appropriate reference energy. a free H atom or half the energy of a free H$_2$ molecule, from the energy of the adsorbed configuration:
 
 $$
-\Delta E_{\text{ads}} = E_{\text{conf}} - \left(n, E_{\text{surf}} + E_{\text{ref}}\right),
+\Delta E_{\text{ads}} = E_{\text{conf}} - \left(n\, E_{\text{surf}} + E_{\text{ref}}\right),
 $$
 
 where $E_{\text{conf}}$ is the energy of the retained (lowest-energy) adsorption configuration, $E_{\text{surf}}$ is the energy of the bare reference surface, $n$ is the number of surface replicas contained in the adsorption supercell (obtained from the ratio of the two structures' unit-cell volumes), and $E_{\text{ref}}$ is either the energy of an isolated H atom or half the energy of an isolated H$_2$ molecule, depending on whether atomic or molecular adsorption is being evaluated. The same ML-IAP/DFT-agnostic energy-lookup mechanism used for surface ranking is applied here.
@@ -75,10 +75,10 @@ For the bulk structure, the local electrostatic potential is read and averaged a
 For each slab, the planar-averaged potential is divided into bulk-like and vacuum regions. A user-defined fraction near the boundaries of each region is discarded to avoid edge artifacts, and the mean potential is calculated in both regions. The slab VBM relative to vacuum is then obtained as:
 
 $$
-\text{VBM}{\text{vac}} = \text{VBM}{\text{DFT}} + \left(\bar{V}{\text{bulk-like}} - \bar{V}{\text{bulk}}\right) - \bar{V}{\text{vac}}, \qquad \text{CBM}{\text{vac}} = \text{VBM}{\text{vac}} + E{\text{gap}},
+\text{VBM}_{\text{vac}} = \text{VBM}_{\text{DFT}} + \left(\bar{V}_{\text{bulk-like}} - \bar{V}_{\text{bulk}}\right) - \bar{V}_{\text{vac}}, \qquad \text{CBM}_{\text{vac}} = \text{VBM}_{\text{vac}} + E_{\text{gap}},
 $$
 
-where $\text{VBM}{\text{DFT}}$ and $E{\text{gap}}$ are the valence-band maximum and band gap read from the bulk band structure, $\bar{V}{\text{bulk}}$ is the macroscopic-average potential obtained from the separate bulk calculation, and $\bar{V}{\text{bulk-like}}$ and $\bar{V}{\text{vac}}$ are the mean planar-averaged potentials in the bulk-like and vacuum regions of the slab, respectively. The parenthesised term realigns the slab's internal electrostatic reference to that of the bulk calculation, and subtracting $\bar{V}{\text{vac}}$ then re-references the result to that slab's own vacuum level.
+where $\text{VBM}_{\text{DFT}}$ and $E_{\text{gap}}$ are the valence-band maximum and band gap read from the bulk band structure, $\bar{V}_{\text{bulk}}$ is the macroscopic-average potential obtained from the separate bulk calculation, and $\bar{V}_{\text{bulk-like}}$ and $\bar{V}_{\text{vac}}$ are the mean planar-averaged potentials in the bulk-like and vacuum regions of the slab, respectively. The parenthesised term realigns the slab's internal electrostatic reference to that of the bulk calculation, and subtracting $\bar{V}_{\text{vac}}$ then re-references the result to that slab's own vacuum level.
 
 This yields ionization potentials and electron affinities that can be compared across compositions, facets, and materials, enabling the assessment of photocatalytic redox-potential alignment and photovoltaic contact alignment [@lopez2026bandedge].
 
