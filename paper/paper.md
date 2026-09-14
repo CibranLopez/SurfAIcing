@@ -2,27 +2,25 @@
 title: 'SurfAIcing: A Python Workflow for Machine-Learning-Accelerated Surface, Interface, and Adsorption Energetics'
 tags:
   - Python
-  - materials science
-  - condensed matter physics
-  - density functional theory
-  - machine learning interatomic potentials
-  - surface science
-  - photocatalysis
-  - photovoltaics
-  - VASP
+  - Materials science
+  - Condensed matter physics
+  - Photocatalysis
+  - Photovoltaics
 authors:
-  - name: Cibrán López Álvarez
+  - name: Cibrán López
     orcid: 0000-0003-3949-5058
+    corresponding: true
     affiliation: "1, 2"
   - name: Claudio Cazorla
+    orcid: 0000-0002-6501-4513
     affiliation: "1, 2, 3"
 affiliations:
-  - name: Departament de Física, Universitat Politècnica de Catalunya, 08034 Barcelona, Spain
-    index: 1
-  - name: Research Center in Multiscale Science and Engineering, Universitat Politècnica de Catalunya, Campus Diagonal-Besòs, 08019 Barcelona, Spain
-    index: 2
-  - name: Institució Catalana de Recerca i Estudis Avançats (ICREA), Passeig Lluís Companys 23, 08010 Barcelona, Spain
-    index: 3
+ - name: Departament de Física, Universitat Politècnica de Catalunya, 08034 Barcelona, Spain
+   index: 1
+ - name: Research Center in Multiscale Science and Engineering, Universitat Politècnica de Catalunya, Campus Diagonal-Besòs, Av. Eduard Maristany 10-14, 08019 Barcelona, Spain
+   index: 2
+ - name: Institució Catalana de Recerca i Estudis Avançats (ICREA), Passeig Lluís Companys 23, 08010 Barcelona, Spain
+   index: 3
 date: 11 September 2026
 bibliography: paper.bib
 ---
@@ -39,7 +37,7 @@ Surface-energy screening is combinatorially expensive: a single bulk structure c
 
 This combination is aimed squarely at two application areas where the relevant surface or interface is rarely known in advance. In heterogeneous catalysis and photocatalysis, activity and selectivity are set by which facet is exposed, how strongly a reactant adsorbs on it, and whether its band edges straddle the redox potentials of the target reaction (e.g. proton or CO$_2$ reduction, water oxidation); screening these properties across many candidate terminations at DFT cost alone is usually prohibitive. In photovoltaics, device efficiency depends on aligning an absorber's band edges with those of its selective contacts, and increasingly on engineering the interface between two absorber compositions or phases directly, so that charge is extracted rather than lost to recombination. `SurfAIcing` was built to make both kinds of screening — surface/adsorption energetics and interface band alignment — tractable across the large compositional and orientational spaces that these problems typically involve. The result is a single, consistent pipeline that a researcher can use to: (1) rank candidate surfaces of a material by formation energy; (2) build heterostructure interfaces between two slabs; (3) estimate hydrogen adsorption energies on a chosen surface; and (4) compute ionization potentials and electron affinities via vacuum-referenced band alignment.
 
-# Functionality
+# SurfAIcing
 
 **Bulk relaxation and slab generation.** Starting from a single bulk structure file, `SurfAIcing` relaxes the bulk cell — either with the MLIAP (cell and atomic-position relaxation via an `ASE` `ExpCellFilter`/BFGS optimizer) or by accepting a pre-relaxed DFT structure — and then uses `pymatgen`'s `generate_all_slabs` to enumerate every symmetrically distinct slab up to a user-defined maximum Miller index, for user-set minimum slab and vacuum thicknesses, optionally repairing terminations that would otherwise expose broken bonds. For every resulting slab, `SurfAIcing` records its Miller index, termination shift, surface area, atom count, and polarity/symmetry flags, writes it out as a VASP structure file, and generates a matching k-point mesh at a user-specified reciprocal-space density, so each candidate surface arrives ready for either DFT or MLIAP evaluation.
 
@@ -55,6 +53,7 @@ This combination is aimed squarely at two application areas where the relevant s
 
 # Acknowledgements
 
-The authors thank Edgardo Saucedo for helpful discussions during the development of this software.
+C.C. acknowledges support by MICIN/AEI/10.13039/501100011033 and ERDF/EU under the grants CNS2025-165467, PID2023-146623NB-I00 and PID2023-147469NB-C21 and by the Generalitat de Catalunya under the grants 2021SGR-00343, 2021SGR-01519 and 2021SGR-01411. Computational support was provided by the Red Española de Supercomputación under the grants FI-2024-1-0005, FI-2024-2-0003, FI-2024-3-0004, FI-2024-1-0025, FI-2024-2-0006, and FI-2025-1-0015. This work is part of the Maria de Maeztu Units of Excellence Programme CEX2023-001300-M funded by MCIN/AEI (10.13039/501100011033). C.L. acknowledges support from the Renew-PV European COST action (CA21148).
 
 # References
+
