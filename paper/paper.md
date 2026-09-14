@@ -1,5 +1,5 @@
 ---
-title: 'SurfAIcing: A Python Workflow for Machine-Learning-Accelerated Surface, Interface, and Adsorption Energetics'
+title: 'SurfAIcing: A Python Package for Accelerated Surface and Interface Screening'
 tags:
   - Python
   - Materials science
