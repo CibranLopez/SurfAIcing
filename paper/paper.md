@@ -41,7 +41,7 @@ This combination is particularly useful in application areas where the relevant 
 
 # SurfAIcing
 
-![Flow chart. \label{fig:flow-chart}](figure.pdf){width=100%}
+![**Overview of the SurfAIcing workflow.** Starting from a bulk crystal structure, SurfAIcing generates candidate slabs and evaluates their surface energies using either machine-learning interatomic potentials (ML-IAPs) or density functional theory (DFT). The resulting surfaces can then be screened for hydrogen adsorption, vacuum-referenced band alignment, or coherent heterostructure formation. \label{fig:flow-chart}](figure.pdf){width=100%}
 
 **Bulk relaxation and slab generation.** Starting from a bulk structure file (\autoref{fig:flow-chart}), `SurfAIcing` either relaxes the bulk structure using an ML-IAP or accepts a pre-relaxed density functional theory (DFT) structure. For ML-IAP relaxation, cell and atomic positions are optimized using `ASE`'s `ExpCellFilter` and BFGS optimizer. The relaxed structure is then passed to pymatgen's generate_all_slabs to enumerate symmetrically distinct slabs up to a user-defined maximum Miller index and subject to user-defined minimum slab and vacuum thicknesses.
 
