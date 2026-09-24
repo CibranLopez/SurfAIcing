@@ -31,7 +31,7 @@ Surfaces and interfaces determine many of the properties that make materials use
 
 # Statement of need
 
-Surface-energy screening is combinatorially expensive. A single bulk structure can yield tens to hundreds of distinct slabs when multiple Miller indices and terminations are considered [@lopez2024mlaided]. Traditionally, each candidate requires an independent first-principles relaxation before the thermodynamically favored surfaces can be identified. Existing tools such as Surfaxe [@brlec2021surfaxe], built on pymatgen [@ong2013pymatgen], streamline this process by automating slab generation, first-principles input preparation, and post-processing. These tools, however, assume that every calculation will ultimately be evaluated at first-principles level, which is often the actual bottleneck in practice.
+Surface-energy screening is combinatorially expensive. A single bulk structure can yield tens to hundreds of distinct slabs when multiple Miller indices and terminations are considered. Traditionally, each candidate requires an independent first-principles relaxation before the thermodynamically favored surfaces can be identified. Existing tools such as Surfaxe [@brlec2021surfaxe], built on pymatgen [@ong2013pymatgen], streamline this process by automating slab generation, first-principles input preparation, and post-processing. These tools, however, assume that every calculation will ultimately be evaluated at first-principles level, which is often the actual bottleneck in practice.
 
 `SurfAIcing` targets this bottleneck directly [@lopez2026bandedge]. It combines pymatgen-based slab and coherent-interface generation [@zur1984lattice] with machine-learning interatomic potentials (ML-IAPs), such as the MACE-MP-0 foundation model [@batatia2024foundation], accessed through ASE [@larsen2017ase]. Surface energies, relaxed geometries, and single-point energies for molecular adsorption or band-alignment calculations can therefore be obtained using ML-IAPs when a fast estimate is sufficient. These calculations can subsequently be replaced by first-principles results, parsed from VASP's [@kresse1996] vasprun.xml and LOCPOT files, without changing the analysis workflow.
 
@@ -59,7 +59,7 @@ where $E_{\text{slab}}$ is the total energy of the relaxed slab, $E_{\text{bulk}
 
 **Hydrogen adsorption energetics.** For a selected surface, `SurfAIcing` evaluates multiple candidate hydrogen adsorption configurations, including different adsorption sites and orientations. Each configuration is matched to the bare reference surface through its lattice vectors, ensuring that all candidates use a consistent supercell. The lowest-energy configuration is retained.
 
-Adsorption energies are calculated by subtracting the replica-scaled bare-surface energy and the appropriate reference energy. a free H atom or half the energy of a free H$_2$ molecule, from the energy of the adsorbed configuration [@norskov2004]:
+Adsorption energies are calculated by subtracting the replica-scaled bare-surface energy and the appropriate reference energy. A free H atom or half the energy of a free H$_2$ molecule, from the energy of the adsorbed configuration [@norskov2004]:
 
 $$
 \Delta E_{\text{ads}} = E_{\text{conf}} - \left(n\, E_{\text{surf}} + E_{\text{ref}}\right),
