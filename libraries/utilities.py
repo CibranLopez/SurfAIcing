@@ -117,6 +117,36 @@ def relax_structure(
         pass
 
 
+def _get_vasp_structure_file(folder):
+    """Return the preferred structure file in a VASP output directory."""
+    for candidate in ['CONTCAR', 'POSCAR']:
+        path = os.path.join(folder, candidate)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _read_structure_from_folder(folder):
+    """Read a structure from the most informative VASP file available in a folder."""
+    vasprun_candidates = [
+        os.path.join(folder, 'vasprun.xml'),
+        os.path.join(folder, 'vasprun.xml.gz'),
+    ]
+    for vasprun_file in vasprun_candidates:
+        if os.path.exists(vasprun_file):
+            try:
+                return Vasprun(vasprun_file).final_structure
+            except Exception:
+                print(f'Error reading {os.path.basename(vasprun_file)} at {folder}')
+                break
+
+    structure_file = _get_vasp_structure_file(folder)
+    if structure_file is not None:
+        return Structure.from_file(structure_file)
+
+    return None
+
+
 def read_energy(
         folder,
         model_load_path='mace-mpa-0-medium.model',
@@ -133,18 +163,27 @@ def read_energy(
         ssc_energy (float): Single-shot energy of the structure
     """
     ssc_energy = np.nan
-    if os.path.exists(f'{folder}/vasprun.xml'):
+    vasprun_file = None
+    for candidate in ['vasprun.xml', 'vasprun.xml.gz']:
+        path = os.path.join(folder, candidate)
+        if os.path.exists(path):
+            vasprun_file = path
+            break
+
+    if vasprun_file is not None:
         try:
-            ssc_energy = Vasprun(f'{folder}/vasprun.xml').final_energy
-        except:
-            print(f'Error reading vasprun.xml at {folder}')
-            pass
+            ssc_energy = Vasprun(vasprun_file).final_energy
+        except Exception:
+            print(f'Error reading {os.path.basename(vasprun_file)} at {folder}')
     elif os.path.exists(f'{folder}/single_shot_energy'):
         ssc_energy = np.loadtxt(f'{folder}/single_shot_energy')
     elif os.path.exists(f'{folder}/CONTCAR') or os.path.exists(f'{folder}/POSCAR'):
         try:
+            structure_file = _get_vasp_structure_file(folder)
+            if structure_file is None:
+                raise FileNotFoundError(f'No structure file found in {folder}')
             if not os.path.exists(f'{folder}/CONTCAR'):
-                _ = slm.structural_relaxation(f'{folder}/POSCAR',
+                _ = slm.structural_relaxation(structure_file,
                                               model_load_path,
                                               device=device,
                                               relax_cell=False,
@@ -153,9 +192,8 @@ def read_energy(
             ssc_energy, _, _ = slm.single_shot_energy_calculation(f'{folder}/CONTCAR',
                                                                   model_load_path,
                                                                   device=device)
-        except:
-            print('Error loading model')
-            pass
+        except Exception:
+            print(f'Error loading model or structure in {folder}')
     return ssc_energy
 
 
@@ -170,11 +208,11 @@ def read_volume(
     Returns:
         volume (float): Volume of the structure.
     """
-    try:
-        return Vasprun(f'{folder}/vasprun.xml').final_structure.volume
-    except:
-        print(f'Error reading vasprun.xml at {folder}')
-        pass
+    structure = _read_structure_from_folder(folder)
+    if structure is not None:
+        return structure.volume
+    print(f'Could not determine structure volume for {folder}')
+    return None
 
 
 def read_lattice_vectors(
@@ -188,11 +226,11 @@ def read_lattice_vectors(
     Returns:
         volume (float): Volume of the structure.
     """
-    try:
-        return Vasprun(f'{folder}/vasprun.xml').final_structure.lattice.matrix
-    except:
-        print(f'Error reading vasprun.xml at {folder}')
-        pass
+    structure = _read_structure_from_folder(folder)
+    if structure is not None:
+        return structure.lattice.matrix
+    print(f'Could not determine lattice vectors for {folder}')
+    return None
 
 
 def generate_kpoints(
@@ -314,16 +352,16 @@ def generate_inequivalent_hydrogen_sites(
         list[str]: Paths to the generated adsorption directories.
     """
     surface_dir = os.path.abspath(surface_dir)
-    contcar_path = os.path.join(surface_dir, 'CONTCAR')
-    if not os.path.exists(contcar_path):
-        raise FileNotFoundError(f'CONTCAR not found in surface directory: {surface_dir}')
+    structure_path = _get_vasp_structure_file(surface_dir)
+    if structure_path is None:
+        raise FileNotFoundError(f'Neither CONTCAR nor POSCAR found in surface directory: {surface_dir}')
 
     if output_dir is None:
         output_dir = os.path.join(os.path.dirname(surface_dir), 'H-absorption')
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    structure = Structure.from_file(contcar_path)
+    structure = Structure.from_file(structure_path)
     top_sites = _get_top_surface_sites(structure, z_tolerance=z_tolerance)
     if not top_sites:
         raise ValueError(f'Could not identify any top surface sites in {surface_dir}.')

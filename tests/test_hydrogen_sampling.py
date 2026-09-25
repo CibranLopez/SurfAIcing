@@ -1,6 +1,7 @@
 import os
 import sys
 
+import numpy as np
 from pathlib import Path
 
 from pymatgen.core import Structure
@@ -9,7 +10,25 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from libraries.utilities import generate_inequivalent_hydrogen_sites
+from libraries.utilities import generate_inequivalent_hydrogen_sites, read_lattice_vectors, read_volume
+
+
+def test_read_structure_from_poscar_without_vasprun(tmp_path):
+    structure = Structure(
+        lattice=[[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 12.0]],
+        species=['Ti', 'O', 'Ti'],
+        coords=[[0.0, 0.0, 0.8], [0.5, 0.5, 0.2], [0.5, 0.0, 0.8]],
+    )
+
+    folder = tmp_path / 'surface_no_vasprun'
+    folder.mkdir()
+    structure.to(filename=str(folder / 'POSCAR'))
+
+    volume = read_volume(str(folder))
+    lattice = read_lattice_vectors(str(folder))
+
+    assert np.isclose(volume, structure.volume)
+    np.testing.assert_allclose(lattice, structure.lattice.matrix)
 
 
 def test_generate_inequivalent_hydrogen_sites(tmp_path):
