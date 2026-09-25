@@ -2,8 +2,11 @@ import numpy           as np
 import libraries.model as slm
 import json
 import os
+import shutil
 
-from pymatgen.io.vasp.inputs import Kpoints
+from scipy.spatial import Voronoi
+
+from pymatgen.io.vasp.inputs import Kpoints, Poscar
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core.structure import Structure
 
@@ -116,8 +119,8 @@ def relax_structure(
 
 def read_energy(
         folder,
-        model_load_path='large',
-        device='cuda'
+        model_load_path='mace-mpa-0-medium.model',
+        device='cpu'
 ):
     """Read the energy of a structure from a given folder.
 
@@ -215,3 +218,165 @@ def generate_kpoints(
 
     # Write the modified KPOINTS file
     kpoints.write_file(kpoints_file)
+
+
+def _get_top_surface_sites(
+        structure,
+        z_tolerance=0.25
+):
+    """Return the atoms in the top-most surface layer of the slab."""
+    if len(structure) == 0:
+        raise ValueError('Structure is empty; no surface sites can be sampled.')
+
+    max_z = max(site.z for site in structure)
+    top_sites = [site for site in structure if (max_z - site.z) <= z_tolerance]
+    if not top_sites:
+        top_sites = list(structure)
+    return top_sites
+
+
+def _voronoi_site_groups(
+        sites,
+        tolerance=1e-6
+):
+    """Group top-layer sites by their local Voronoi-neighbor geometry.
+
+    This is a lightweight way to approximate inequivalent adsorption positions on a surface
+    without assuming that every symmetry-equivalent atom will share the same projected coordinate.
+    """
+    if len(sites) <= 2:
+        return [list(range(len(sites)))]
+
+    coords_2d = np.array([site.coords[:2] for site in sites], dtype=float)
+    try:
+        vor = Voronoi(coords_2d)
+    except Exception:
+        return [list(range(len(sites)))]
+
+    neighbor_map = {idx: [] for idx in range(len(sites))}
+    for ridge in vor.ridge_points:
+        i, j = ridge
+        if 0 <= i < len(sites) and 0 <= j < len(sites):
+            neighbor_map[int(i)].append(int(j))
+            neighbor_map[int(j)].append(int(i))
+
+    local_signatures = []
+    for idx, site in enumerate(sites):
+        neighbors = neighbor_map.get(idx, [])
+        if len(neighbors) == 0:
+            local_signatures.append((0.0,))
+            continue
+        distances = [np.linalg.norm(coords_2d[neighbor] - coords_2d[idx]) for neighbor in neighbors]
+        signature = tuple(np.round(np.sort(np.asarray(distances)), decimals=6))
+        local_signatures.append(signature)
+
+    groups = []
+    for idx, signature in enumerate(local_signatures):
+        matched = False
+        for group in groups:
+            if np.allclose(np.asarray(signature), np.asarray(local_signatures[group[0]]), atol=tolerance, rtol=0):
+                group.append(idx)
+                matched = True
+                break
+        if not matched:
+            groups.append([idx])
+
+    return groups
+
+
+def generate_inequivalent_hydrogen_sites(
+        surface_dir,
+        output_dir=None,
+        adsorption_height=1.5,
+        z_tolerance=0.25,
+        sample_label='conf',
+        extra_points_per_site=4,
+        offset_fraction=0.35
+):
+    """Generate a Voronoi-informed set of inequivalent hydrogen adsorption configurations.
+
+    The routine identifies the top-layer surface atoms, groups them via their local Voronoi
+    neighbor geometry, and samples a small set of neighboring adsorption points around each unique
+    site. This follows the same general idea as the ShakeNBreak defect-sampling approach: collect
+    the unique local environments and then generate a few nearby starting points for each one.
+
+    Args:
+        surface_dir (str): Directory containing the slab POSCAR (and optional KPOINTS/POTCAR).
+        output_dir (str): Directory where the generated adsorption calculations will be written.
+            If not provided, a sibling directory called H-absorption is created.
+        adsorption_height (float): Height of the H atom above the chosen site in Angstrom.
+        z_tolerance (float): Tolerance used to select atoms in the top surface layer.
+        sample_label (str): Prefix used for the generated folders.
+        extra_points_per_site (int): Number of extra offset points generated around each inequivalent site.
+        offset_fraction (float): Fraction of the nearest-neighbor distance used for offset sampling.
+
+    Returns:
+        list[str]: Paths to the generated adsorption directories.
+    """
+    surface_dir = os.path.abspath(surface_dir)
+    contcar_path = os.path.join(surface_dir, 'CONTCAR')
+    if not os.path.exists(contcar_path):
+        raise FileNotFoundError(f'CONTCAR not found in surface directory: {surface_dir}')
+
+    if output_dir is None:
+        output_dir = os.path.join(os.path.dirname(surface_dir), 'H-absorption')
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    structure = Structure.from_file(contcar_path)
+    top_sites = _get_top_surface_sites(structure, z_tolerance=z_tolerance)
+    if not top_sites:
+        raise ValueError(f'Could not identify any top surface sites in {surface_dir}.')
+
+    site_groups = _voronoi_site_groups(top_sites)
+    grouped_sites = [top_sites[idx] for group in site_groups for idx in group]
+    if not grouped_sites:
+        raise ValueError(f'Could not identify any inequivalent top surface sites in {surface_dir}.')
+
+    candidate_centers = []
+    for group in site_groups:
+        group_sites = [top_sites[idx] for idx in group]
+        coords_2d = np.array([site.coords[:2] for site in group_sites], dtype=float)
+        center = np.mean(coords_2d, axis=0)
+        if len(coords_2d) > 1:
+            distances = [np.linalg.norm(coords_2d[i] - center) for i in range(len(coords_2d))]
+        else:
+            distances = [0.0]
+        neighbor_dist = np.median(np.asarray(distances)) if len(distances) > 0 else 0.5
+        candidate_centers.append((center, max(neighbor_dist, 0.5)))
+
+    created_dirs = []
+    config_index = 0
+    for site_index, (center, neighbor_dist) in enumerate(candidate_centers):
+        span = max(offset_fraction * neighbor_dist, 0.2)
+        offsets = [(0.0, 0.0)]
+        for direction in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)]:
+            offsets.append((direction[0] * span, direction[1] * span))
+        for diag in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)]:
+            if len(offsets) < max(1, extra_points_per_site + 1):
+                offsets.append((diag[0] * span / np.sqrt(2), diag[1] * span / np.sqrt(2)))
+
+        offsets = offsets[: max(1, extra_points_per_site + 1)]
+        for offset_index, (dx, dy) in enumerate(offsets):
+            config_name = f'{sample_label}_{site_index:02d}_{offset_index:02d}'
+            config_dir = os.path.join(output_dir, config_name)
+            os.makedirs(config_dir, exist_ok=True)
+            created_dirs.append(config_dir)
+
+            new_structure = structure.copy()
+            adsorption_position = np.array([
+                center[0] + dx,
+                center[1] + dy,
+                max(site.z for site in top_sites) + adsorption_height,
+            ], dtype=float)
+            new_structure.append('H', adsorption_position, coords_are_cartesian=True)
+            Poscar(new_structure).write_file(os.path.join(config_dir, 'POSCAR'))
+
+            for filename in ['KPOINTS', 'POTCAR', 'INCAR', 'run.sh']:
+                source = os.path.join(surface_dir, filename)
+                if os.path.exists(source):
+                    shutil.copy(source, os.path.join(config_dir, filename))
+
+            config_index += 1
+
+    return created_dirs
