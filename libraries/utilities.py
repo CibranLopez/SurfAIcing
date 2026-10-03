@@ -119,7 +119,7 @@ def relax_structure(
 
 def _get_vasp_structure_file(folder):
     """Return the preferred structure file in a VASP output directory."""
-    for candidate in ['CONTCAR', 'POSCAR']:
+    for candidate in ['POSCAR', 'CONTCAR']:
         path = os.path.join(folder, candidate)
         if os.path.exists(path):
             return path
@@ -329,7 +329,9 @@ def generate_inequivalent_hydrogen_sites(
         z_tolerance=0.25,
         sample_label='conf',
         extra_points_per_site=4,
-        offset_fraction=0.35
+        offset_fraction=0.35,
+        adsorbate='H',
+        h2_bond_length=0.74
 ):
     """Generate a Voronoi-informed set of inequivalent hydrogen adsorption configurations.
 
@@ -347,10 +349,24 @@ def generate_inequivalent_hydrogen_sites(
         sample_label (str): Prefix used for the generated folders.
         extra_points_per_site (int): Number of extra offset points generated around each inequivalent site.
         offset_fraction (float): Fraction of the nearest-neighbor distance used for offset sampling.
+        adsorbate (str): 'H' for a hydrogen atom or 'H2' for a hydrogen molecule. For 'H2', each sampled
+            point is generated with two orientations (perpendicular and parallel to the surface).
+        h2_bond_length (float): H-H bond length in Angstrom, used when adsorbate is 'H2'.
 
     Returns:
         list[str]: Paths to the generated adsorption directories.
     """
+    if adsorbate == 'H':
+        orientations = [('', [(0.0, 0.0, 0.0)])]
+    elif adsorbate == 'H2':
+        half = h2_bond_length / 2
+        orientations = [
+            ('perp', [(0.0, 0.0, 0.0), (0.0, 0.0, h2_bond_length)]),
+            ('para', [(-half, 0.0, 0.0), (half, 0.0, 0.0)]),
+        ]
+    else:
+        raise ValueError(f"adsorbate must be 'H' or 'H2', got {adsorbate!r}")
+
     surface_dir = os.path.abspath(surface_dir)
     structure_path = _get_vasp_structure_file(surface_dir)
     if structure_path is None:
@@ -396,25 +412,29 @@ def generate_inequivalent_hydrogen_sites(
 
         offsets = offsets[: max(1, extra_points_per_site + 1)]
         for offset_index, (dx, dy) in enumerate(offsets):
-            config_name = f'{sample_label}_{site_index:02d}_{offset_index:02d}'
-            config_dir = os.path.join(output_dir, config_name)
-            os.makedirs(config_dir, exist_ok=True)
-            created_dirs.append(config_dir)
+            for orientation_name, displacements in orientations:
+                config_name = f'{sample_label}_{site_index:02d}_{offset_index:02d}'
+                if orientation_name:
+                    config_name += f'_{orientation_name}'
+                config_dir = os.path.join(output_dir, config_name)
+                os.makedirs(config_dir, exist_ok=True)
+                created_dirs.append(config_dir)
 
-            new_structure = structure.copy()
-            adsorption_position = np.array([
-                center[0] + dx,
-                center[1] + dy,
-                max(site.z for site in top_sites) + adsorption_height,
-            ], dtype=float)
-            new_structure.append('H', adsorption_position, coords_are_cartesian=True)
-            Poscar(new_structure).write_file(os.path.join(config_dir, 'POSCAR'))
+                new_structure = structure.copy()
+                adsorption_position = np.array([
+                    center[0] + dx,
+                    center[1] + dy,
+                    max(site.z for site in top_sites) + adsorption_height,
+                ], dtype=float)
+                for displacement in displacements:
+                    new_structure.append('H', adsorption_position + np.asarray(displacement), coords_are_cartesian=True)
+                Poscar(new_structure).write_file(os.path.join(config_dir, 'POSCAR'))
 
-            for filename in ['KPOINTS', 'POTCAR', 'INCAR', 'run.sh']:
-                source = os.path.join(surface_dir, filename)
-                if os.path.exists(source):
-                    shutil.copy(source, os.path.join(config_dir, filename))
+                for filename in ['KPOINTS', 'POTCAR', 'INCAR', 'run.sh']:
+                    source = os.path.join(surface_dir, filename)
+                    if os.path.exists(source):
+                        shutil.copy(source, os.path.join(config_dir, filename))
 
-            config_index += 1
+                config_index += 1
 
     return created_dirs
