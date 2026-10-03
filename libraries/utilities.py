@@ -75,8 +75,8 @@ def get_surface_energy_of_formation(
     where all energies are per atom, in units of J/m^2/atom.
 
     Args:
-        ssc_energy_per_atom (float): Single-shot energy per atom.
-        bulk_energy_per_atom (float): Bulk energy per atom.
+        slab_energy (float): Slab energy.
+        bulk_energy_times_fu (float): Bulk energy.
         surface_area (float): Surface area.
 
     Returns:
@@ -88,19 +88,19 @@ def get_surface_energy_of_formation(
 
 def relax_structure(
         poscar_file='POSCAR',
-        model_load_path='large',
+        model_load_path='mace-mpa-0-medium.model',
         relax_cell=False,
         output_folder='.',
-        device='cuda'
+        device='cpu'
 ):
     """Relax a structure.
 
     Args:
         poscar_file (str): Path to the POSCAR file.
-        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'mace-mpa-0-medium.model' model.
         relax_cell (bool): Whether to relax the cell. Default is False.
         output_folder (str): Path to the output folder.
-        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cuda'.
+        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cpu'.
 
     Returns:
         None
@@ -156,8 +156,8 @@ def read_energy(
 
     Args:
         folder (str): Path to the folder containing the structure.
-        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'large' model.
-        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cuda'.
+        model_load_path (str): Path to the pre-trained MACE model file. Default is the 'mace-mpa-0-medium.model' model.
+        device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cpu'.
 
     Returns:
         ssc_energy (float): Single-shot energy of the structure
