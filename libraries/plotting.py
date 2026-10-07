@@ -6,7 +6,7 @@ def plot_ranking(
     surface_energies_of_formation,
     filename='ranking.eps',
     figsize=(15, 5),
-    ylabel=r'$E_{\text{surface}}$ (eV/atom/Å$^2$)',
+    ylabel=r'$E_{\text{surface}}$ (J/m$^2$)',
     dpi=50
 ):
     """Plot the ranking of the slabs based on their energy differences.
@@ -20,6 +20,12 @@ def plot_ranking(
     Returns:
         None
     """
+    # Slabs whose energy could not be computed (NaN) cannot be ranked
+    n_total = surface_energies_of_formation.shape[1]
+    surface_energies_of_formation = surface_energies_of_formation.dropna(axis=1)
+    if surface_energies_of_formation.shape[1] < n_total:
+        print(f'{n_total - surface_energies_of_formation.shape[1]} slab(s) without a valid energy were left out of the plot.')
+    
     # Sorted in ascendent order
     min_arg      = np.argsort(surface_energies_of_formation.values)[0]
     local_minima = surface_energies_of_formation.columns[min_arg]
@@ -36,13 +42,11 @@ def plot_ranking(
             h, k, l, i = sp
         hkl.append(f'$\\mathregular{{({h}{k}{l})_{{{i}}}}}$')
 
-    # Energy differences in eV/supercell
     plt.figure(figsize=figsize)
     plt.plot(energies, 'o-')
     plt.xlim(-0.5, len(hkl)-1+0.5)
     plt.xticks(range(len(hkl)), hkl, rotation='vertical')
     plt.ylabel(ylabel)
-    plt.ylim(bottom=0)
-    #plt.ylim(0, 0.45)
+    plt.ylim(bottom=min(0, 1.1*np.min(energies)))
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     plt.show()

@@ -1,3 +1,6 @@
+import json
+import os
+
 from mace.calculators            import mace_mp
 from ase.md                      import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
@@ -9,8 +12,8 @@ from ase.filters                 import ExpCellFilter
 
 def structural_relaxation(
         path_to_structure,
-        model_load_path='large',
-        device='cuda',
+        model_load_path='mace-mpa-0-medium.model',
+        device='cpu',
         dispersion=False,
         relax_cell=True,
         constant_volume=False,
@@ -28,6 +31,7 @@ def structural_relaxation(
         Parameters:
             path_to_structure (str):   Path to the file containing the structure in VASP format.
             model_load_path   (str):   Path to the pre-trained model.
+            device            (str):   Device to run the computations on ('cpu' or 'cuda'). Defaults to 'cpu'.
             relax_cell        (bool):  A boolean value indicating whether to relax the simulation cell
                 along with atomic positions. Defaults to True.
             constant_volume   (bool):  A boolean value indicating whether maintain the simulation cell
@@ -47,7 +51,7 @@ def structural_relaxation(
 
     # Check whether to relax the cell
     if relax_cell:
-        atoms = ExpCellFilter(atoms, constant_volume=False)
+        atoms = ExpCellFilter(atoms, constant_volume=constant_volume)
 
     # Relax the structure
     dyn = BFGS(atoms, trajectory=f'{output_folder}/run.traj')
@@ -57,13 +61,18 @@ def structural_relaxation(
         atoms = atoms.atoms
 
     write_vasp(f'{output_folder}/CONTCAR', atoms=atoms, direct=True, sort=True)
+    
+    # Record how the CONTCAR was obtained, so later energy evaluations can check they use the same model
+    with open(f'{output_folder}/mlip_provenance.json', 'w') as provenance_file:
+        json.dump({'model': model_load_path, 'device': device, 'relax_cell': relax_cell,
+                    'constant_volume': constant_volume, 'fmax': fmax}, provenance_file, indent=2)
     return atoms
 
 
 def single_shot_energy_calculation(
         path_to_structure,
-        model_load_path='large',
-        device='cuda',
+        model_load_path='mace-mpa-0-medium.model',
+        device='cpu',
         dispersion=False
 ):
     """
@@ -75,9 +84,9 @@ def single_shot_energy_calculation(
     Parameters:
         path_to_structure (str):  Path to the file containing the molecular structure
             in VASP format.
-        model_load_path   (str):  Path to the pre-trained MACE model file. Default is the 'large' model.
+        model_load_path   (str):  Path to the pre-trained MACE model file. Defaults to the repository-local 'mace-mpa-0-medium.model'.
         device            (str):  Device to run the computations on, e.g., 'cuda' for GPU or
-            'cpu' for CPU. Default is 'cuda'.
+            'cpu' for CPU. Defaults to 'cpu'.
         dispersion        (bool): Whether to include the D3 dispersion correction in the model.
 
     Returns:
@@ -106,8 +115,8 @@ def single_shot_energy_calculation(
 
 def molecular_dynamics(
         path_to_structure,
-        model_load_path='large',
-        device='cuda',
+        model_load_path='mace-mpa-0-medium.model',
+        device='cpu',
         dispersion=False,
         temperature=300,
         timestep=1,
@@ -122,8 +131,8 @@ def molecular_dynamics(
 
     Parameters:
         path_to_structure (str):            Path to the input atomic structure file in VASP format.
-        model_load_path   (str, optional):  Path or identifier to load the pre-trained model. Defaults to 'large'.
-        device            (str, optional):  Device used for computation, e.g., 'cuda' or 'cpu'. Defaults to 'cuda'.
+        model_load_path   (str, optional):  Path or identifier to load the pre-trained model. Defaults to the repository-local 'mace-mpa-0-medium.model'.
+        device            (str, optional):  Device used for computation, e.g., 'cuda' or 'cpu'. Defaults to 'cpu'.
         dispersion        (bool, optional): Specifies whether to include dispersion corrections in the model.
             Defaults to False.
         temperature       (float, optional): Initial temperature in Kelvin. Defaults to 300.
