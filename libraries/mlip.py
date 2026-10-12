@@ -1,5 +1,5 @@
+"""ML interatomic potential (MACE) calculations: structural relaxation, single-point energies and molecular dynamics."""
 import json
-import os
 
 from mace.calculators            import mace_mp
 from ase.md                      import Langevin
@@ -9,11 +9,15 @@ from ase.io.vasp                 import read_vasp, write_vasp
 from ase.optimize                import BFGS
 from ase.filters                 import ExpCellFilter
 
+# Defaults shared by every function that evaluates the ML-IAP
+DEFAULT_MODEL  = 'mace-mpa-0-medium.model'
+DEFAULT_DEVICE = 'cpu'
+
 
 def structural_relaxation(
         path_to_structure,
-        model_load_path='mace-mpa-0-medium.model',
-        device='cpu',
+        model_load_path=DEFAULT_MODEL,
+        device=DEFAULT_DEVICE,
         dispersion=False,
         relax_cell=True,
         constant_volume=False,
@@ -71,8 +75,8 @@ def structural_relaxation(
 
 def single_shot_energy_calculation(
         path_to_structure,
-        model_load_path='mace-mpa-0-medium.model',
-        device='cpu',
+        model_load_path=DEFAULT_MODEL,
+        device=DEFAULT_DEVICE,
         dispersion=False
 ):
     """
@@ -115,8 +119,8 @@ def single_shot_energy_calculation(
 
 def molecular_dynamics(
         path_to_structure,
-        model_load_path='mace-mpa-0-medium.model',
-        device='cpu',
+        model_load_path=DEFAULT_MODEL,
+        device=DEFAULT_DEVICE,
         dispersion=False,
         temperature=300,
         timestep=1,
