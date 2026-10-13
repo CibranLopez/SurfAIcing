@@ -1,6 +1,8 @@
 """ML interatomic potential (MACE) calculations: structural relaxation, single-point energies and molecular dynamics."""
 import json
 
+import numpy as np
+
 from mace.calculators            import mace_mp
 from ase.md                      import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
@@ -59,17 +61,25 @@ def structural_relaxation(
 
     # Relax the structure
     dyn = BFGS(atoms, trajectory=f'{output_folder}/run.traj')
-    dyn.run(fmax=fmax)
+    converged = dyn.run(fmax=fmax)
+
+    # Residual forces; when the cell is relaxed, `atoms` is the cell filter and these include the cell degrees of freedom
+    final_fmax = float(np.max(np.linalg.norm(atoms.get_forces(), axis=1)))
 
     if relax_cell:
         atoms = atoms.atoms
+
+    # Residual stress of the relaxed cell in GPa (only meaningful if the cell was relaxed)
+    max_abs_stress = float(np.max(np.abs(atoms.get_stress())) * 160.21766208) if relax_cell else None
 
     write_vasp(f'{output_folder}/CONTCAR', atoms=atoms, direct=True, sort=True)
     
     # Record how the CONTCAR was obtained, so later energy evaluations can check they use the same model
     with open(f'{output_folder}/mlip_provenance.json', 'w') as provenance_file:
         json.dump({'model': model_load_path, 'device': device, 'relax_cell': relax_cell,
-                    'constant_volume': constant_volume, 'fmax': fmax}, provenance_file, indent=2)
+                    'constant_volume': constant_volume, 'fmax': fmax, 'converged': bool(converged),
+                    'steps': dyn.get_number_of_steps(), 'final_fmax_eV_A': final_fmax,
+                    'max_abs_stress_GPa': max_abs_stress}, provenance_file, indent=2)
     return atoms
 
 

@@ -6,6 +6,8 @@ import shutil
 import libraries.energy_lookup as energy_lookup
 from libraries.mlip import DEFAULT_DEVICE, DEFAULT_MODEL
 
+from pymatgen.core.structure import Structure
+
 
 # Save slab information
 def save_json(
@@ -99,6 +101,31 @@ def get_surface_energy_of_formation(
     return (slab_energy - bulk_energy_times_fu) * 16.0218 / (2 * surface_area)
 
 
+def _relaxation_report(bulk_folder):
+    """Describe what the ML-IAP relaxation of the bulk did: lattice before/after and the residual forces and stress."""
+    def describe(structure):
+        a, b, c = structure.lattice.abc
+        alpha, beta, gamma = structure.lattice.angles
+        return (f'a, b, c = {a:.3f}, {b:.3f}, {c:.3f} Å; angles = {alpha:.2f}, {beta:.2f}, {gamma:.2f}°; '
+                f'volume = {structure.volume:.3f} Å^3')
+
+    before = Structure.from_file(f'{bulk_folder}/POSCAR')
+    after  = Structure.from_file(f'{bulk_folder}/CONTCAR')
+    lines  = [f'    input   : {describe(before)}',
+              f'    relaxed : {describe(after)}',
+              f'    volume change: {100 * (after.volume / before.volume - 1):+.2f}%']
+
+    path = f'{bulk_folder}/mlip_provenance.json'
+    if os.path.exists(path):
+        with open(path) as json_file:
+            info = json.load(json_file)
+        lines.append(f"    {info['steps']} steps, residual max force (atoms and cell) {info['final_fmax_eV_A']:.3f} eV/Å, "
+                     f"residual max |stress| {info['max_abs_stress_GPa']:.3f} GPa")
+        if not info['converged']:
+            lines.append('    [warning] the relaxation did not converge')
+    return '\n'.join(lines)
+
+
 def prepare_bulk_structure(
         structure_file,
         bulk_folder,
@@ -146,13 +173,20 @@ def prepare_bulk_structure(
 
     if relax:
         energy_lookup.relax_structure(f'{bulk_folder}/POSCAR', model_load_path, relax_cell=True, output_folder=bulk_folder, device=device)
+        if not os.path.exists(f'{bulk_folder}/CONTCAR'):
+            raise RuntimeError(f'The ML-IAP relaxation of {structure_file} failed: no CONTCAR was written to {bulk_folder} '
+                               f'(see the error printed above; check the model path and the device).')
         mode   = 'relaxed_with_mlip'
-        status = f'Bulk relaxed with the ML-IAP ({model_load_path}), cell and ions: {structure_file}'
+        status = (f'Bulk relaxed with the ML-IAP ({model_load_path}), cell and ions: {structure_file}\n'
+                  + _relaxation_report(bulk_folder))
     else:
         shutil.copy(structure_file, f'{bulk_folder}/CONTCAR')
         mode   = 'used_as_already_relaxed'
         status = (f'Bulk used as already relaxed (not verified): {structure_file}. Make sure it was relaxed at the same '
                   f'level of theory used to evaluate the slabs, otherwise surface energies are biased.')
+        if name.startswith('POSCAR'):
+            status += (f'\n[warning] {os.path.basename(structure_file)} is NOT being relaxed because relax=False was requested; '
+                       f'use relax=None (or True) to relax the atoms and the cell with the ML-IAP.')
 
     with open(f'{bulk_folder}/input_provenance.json', 'w') as json_file:
         json.dump({'input_file': os.path.abspath(structure_file), 'mode': mode,
