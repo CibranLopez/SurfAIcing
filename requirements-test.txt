@@ -1,0 +1,10 @@
+# Needed to run the test-suite (MACE is NOT required: tests use ASE's EMT potential through the emt_backend fixture)
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+pymatgen
+ase>=3.23
+pytest
+pytest-cov

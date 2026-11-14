@@ -78,14 +78,14 @@ def read_lattice_vectors(
 def generate_kpoints(
         poscar_file='POSCAR',
         kpoints_file='KPOINTS',
-        kpoints_density=[20, 20, 20]
+        kpoints_density=(20, 20, 20)
 ):
     """Generate a KPOINTS file with a given density based on a POSCAR file.
 
     Args:
         poscar_file     (str):  Path to the POSCAR file.
         kpoints_file    (str):  Path to the KPOINTS file.
-        kpoints_density (list): K-points density.
+        kpoints_density (sequence): K-points density along each reciprocal lattice vector.
 
     Returns:
         None

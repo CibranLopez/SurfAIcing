@@ -177,6 +177,25 @@ def voronoi_adsorption_sites(
     return sites
 
 
+def _warn_if_settings_differ(
+        output_dir,
+        adsorbate,
+        surface,
+        adsorption_height
+):
+    """Warn when reusable configurations were generated with other settings than the ones requested now."""
+    path = os.path.join(output_dir, 'sites.json')
+    if not os.path.exists(path):
+        return
+    with open(path) as json_file:
+        previous = json.load(json_file)
+    requested = {'adsorbate': adsorbate, 'surface': surface, 'adsorption_height': adsorption_height}
+    for key, value in requested.items():
+        if key in previous and previous[key] != value:
+            print(f'[warning] the configurations in {output_dir} were generated with {key}={previous[key]!r}, '
+                  f'but {key}={value!r} was requested; use overwrite=True to regenerate them.')
+
+
 def generate_inequivalent_hydrogen_sites(
         surface_dir,
         output_dir=None,
@@ -220,6 +239,9 @@ def generate_inequivalent_hydrogen_sites(
     """
     if adsorbate not in ('H', 'H2'):
         raise ValueError(f"adsorbate must be 'H' or 'H2', got {adsorbate!r}")
+    # Validate before touching the disk: an invalid value must not delete existing configurations (overwrite=True)
+    if surface not in ('top', 'bottom'):
+        raise ValueError(f"surface must be 'top' or 'bottom', got {surface!r}")
 
     surface_dir = os.path.abspath(surface_dir)
     structure_path = vasp_files.get_structure_file(surface_dir)
@@ -235,6 +257,7 @@ def generate_inequivalent_hydrogen_sites(
                       if name.startswith(sample_label) and os.path.isdir(os.path.join(output_dir, name)))
     if existing and not overwrite:
         print(f'{len(existing)} configurations already exist in {output_dir}; reusing them (overwrite=True regenerates them).')
+        _warn_if_settings_differ(output_dir, adsorbate, surface, adsorption_height)
         return existing
     for path in existing:
         shutil.rmtree(path)

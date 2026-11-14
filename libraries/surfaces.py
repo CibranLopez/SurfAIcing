@@ -3,10 +3,21 @@ import json
 import os
 import shutil
 
+import numpy as np
+
 import libraries.energy_lookup as energy_lookup
 from libraries.mlip import DEFAULT_DEVICE, DEFAULT_MODEL
 
 from pymatgen.core.structure import Structure
+
+
+def _json_default(value):
+    """Let json serialise the NumPy scalars/arrays that pymatgen may leave in the slab metadata."""
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    raise TypeError(f'Object of type {type(value).__name__} is not JSON serializable')
 
 
 # Save slab information
@@ -49,9 +60,11 @@ def save_json(
             'number_of_sites': slab.num_sites,
             'reduced_formula': slab.composition.reduced_formula,
         }
+    else:
+        raise ValueError(f"data must be 'slab' or 'bulk', got {data!r}")
 
     with open(filename, 'w') as json_file:
-        json.dump(slab_data, json_file)
+        json.dump(slab_data, json_file, default=_json_default)
 
 
 def load_json(
@@ -119,8 +132,10 @@ def _relaxation_report(bulk_folder):
     if os.path.exists(path):
         with open(path) as json_file:
             info = json.load(json_file)
+        stress = info.get('max_abs_stress_GPa')
+        stress_text = 'not computed (cell not relaxed)' if stress is None else f'{stress:.3f} GPa'
         lines.append(f"    {info['steps']} steps, residual max force (atoms and cell) {info['final_fmax_eV_A']:.3f} eV/Å, "
-                     f"residual max |stress| {info['max_abs_stress_GPa']:.3f} GPa")
+                     f"residual max |stress| {stress_text}")
         if not info['converged']:
             lines.append('    [warning] the relaxation did not converge')
     return '\n'.join(lines)
@@ -169,7 +184,9 @@ def prepare_bulk_structure(
                              f"Name it POSCAR* (relax with the ML-IAP) or CONTCAR* (already relaxed), or pass relax=True/False.")
 
     os.makedirs(bulk_folder, exist_ok=True)
-    shutil.copy(structure_file, f'{bulk_folder}/POSCAR')
+    # The input may already be bulk_folder/POSCAR (or CONTCAR): copying a file onto itself raises SameFileError
+    if not (os.path.exists(f'{bulk_folder}/POSCAR') and os.path.samefile(structure_file, f'{bulk_folder}/POSCAR')):
+        shutil.copy(structure_file, f'{bulk_folder}/POSCAR')
 
     if relax:
         energy_lookup.relax_structure(f'{bulk_folder}/POSCAR', model_load_path, relax_cell=True, output_folder=bulk_folder, device=device)
@@ -180,7 +197,8 @@ def prepare_bulk_structure(
         status = (f'Bulk relaxed with the ML-IAP ({model_load_path}), cell and ions: {structure_file}\n'
                   + _relaxation_report(bulk_folder))
     else:
-        shutil.copy(structure_file, f'{bulk_folder}/CONTCAR')
+        if not (os.path.exists(f'{bulk_folder}/CONTCAR') and os.path.samefile(structure_file, f'{bulk_folder}/CONTCAR')):
+            shutil.copy(structure_file, f'{bulk_folder}/CONTCAR')
         mode   = 'used_as_already_relaxed'
         status = (f'Bulk used as already relaxed (not verified): {structure_file}. Make sure it was relaxed at the same '
                   f'level of theory used to evaluate the slabs, otherwise surface energies are biased.')

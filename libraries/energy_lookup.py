@@ -37,15 +37,11 @@ def relax_structure(
     Returns:
         None
     """
-    try:
-        _ = mlip.structural_relaxation(poscar_file,
-                                      model_load_path,
-                                      device=device,
-                                      relax_cell=relax_cell,
-                                      output_folder=output_folder)
-    except:
-        print('Error loading model')
-        pass
+    mlip.structural_relaxation(poscar_file,
+                               model_load_path,
+                               device=device,
+                               relax_cell=relax_cell,
+                               output_folder=output_folder)
 
 
 def _read_provenance(folder):
@@ -145,7 +141,10 @@ def read_energy(
         except Exception as exc:
             print(f'Error reading {os.path.basename(vasprun_file)} at {folder}: {exc}')
     elif os.path.exists(f'{folder}/single_shot_energy'):
-        ssc_energy = np.loadtxt(f'{folder}/single_shot_energy')
+        try:
+            ssc_energy = np.loadtxt(f'{folder}/single_shot_energy').item()
+        except Exception as exc:
+            print(f'Error reading single_shot_energy at {folder}: {type(exc).__name__}: {exc}')
     elif os.path.exists(f'{folder}/CONTCAR') or os.path.exists(f'{folder}/POSCAR'):
         try:
             structure_file = vasp_files.get_structure_file(folder)

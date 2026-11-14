@@ -64,11 +64,13 @@ def check_slab_file(
     if os.path.exists(json_path):
         with open(json_path) as json_file:
             slab_data = json.load(json_file)
-        if abs(slab_data['surface_area'] - area) > 0.01 * area:
+        stored_area = slab_data.get('surface_area')
+        if stored_area is not None and abs(stored_area - area) > 0.01 * area:
             print(f"[warning] '{label}': in-plane area of the file ({area:.1f} Å²) differs from the area stored in slab_data.json "
-                  f"({slab_data['surface_area']:.1f} Å²): the POSCAR is not the slab that was generated.")
-        if expected_miller is not None and tuple(slab_data['miller_index']) != tuple(expected_miller):
-            print(f"[warning] '{label}': slab_data.json says Miller index {tuple(slab_data['miller_index'])}, but the declared "
+                  f"({stored_area:.1f} Å²): the POSCAR is not the slab that was generated.")
+        stored_miller = slab_data.get('miller_index')
+        if expected_miller is not None and stored_miller is not None and tuple(stored_miller) != tuple(expected_miller):
+            print(f"[warning] '{label}': slab_data.json says Miller index {tuple(stored_miller)}, but the declared "
                   f"Miller index is {tuple(expected_miller)}.")
 
 
@@ -347,13 +349,28 @@ def to_plain_structure(
     return Structure(structure.lattice, structure.species, structure.frac_coords, coords_are_cartesian=False)
 
 
+def to_right_handed(
+        structure
+):
+    """Plain Structure with a right-handed cell (positive triple product of the lattice vectors).
+
+    ZSL supercell matrices can have a negative determinant, which gives a left-handed cell. The two in-plane vectors are
+    then swapped. This only re-labels the cell: the atoms, their Cartesian positions and the in-plane area are unchanged.
+    A structure that is already right-handed is returned as it is (as a plain Structure).
+    """
+    plain = to_plain_structure(structure)
+    if np.linalg.det(plain.lattice.matrix) >= 0:
+        return plain
+    return Structure(plain.lattice.matrix[[1, 0, 2]], plain.species, plain.frac_coords[:, [1, 0, 2]], coords_are_cartesian=False)
+
+
 def write_structure(
         structure,
         path
 ):
-    """Write a structure to a VASP file, creating the folder if needed."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    write_vasp(path, AseAtomsAdaptor.get_atoms(to_plain_structure(structure)), direct=True, sort=True)
+    """Write a structure to a VASP file (right-handed cell), creating the folder if needed."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    write_vasp(path, AseAtomsAdaptor.get_atoms(to_right_handed(structure)), direct=True, sort=True)
 
 
 def get_adhesion_energy_of_formation(

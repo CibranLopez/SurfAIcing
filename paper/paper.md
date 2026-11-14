@@ -33,7 +33,7 @@ Surfaces and interfaces determine how a battery electrode degrades, how a solar 
 
 Surface-energy screening is combinatorially expensive. A single bulk structure can yield tens to hundreds of distinct slabs when several Miller indices and terminations are considered, and traditionally each candidate requires its own first-principles relaxation before the thermodynamically favored surfaces can be identified. `SurfAIcing` targets this bottleneck directly [@lopez2026bandedge; @lopez2026surfacephysicslowdimensionalpnictogen]. Surface energies, relaxed geometries, and adsorption and adhesion energies are first obtained with an ML-IAP, such as the MACE-MPA-0 (medium) foundation model [@batatia2024foundation] accessed through ASE [@larsen2017ase], and can later be replaced by first-principles results parsed from VASP [@kresse1996] files without changing the analysis. Vacuum-referenced band alignment additionally needs first-principles (`LOCPOT`, `vasprun.xml`) data on the selected candidates.
 
-This matters where the relevant surface or interface is rarely known in advance. In photocatalysis [@maggi2026q1D], activity depends on the exposed facet, on reactant adsorption, and on whether the band edges straddle the redox potentials of the target reaction. In photovoltaics [@lopez2024mlaided], efficiency depends on aligning the absorber's band edges with those of its contacts. The target audience is computational materials scientists who must survey many facets, terminations, and interfaces before committing first-principles resources. The pipeline (1) ranks candidate surfaces by formation energy; (2) constructs heterostructure interfaces between two slabs; (3) estimates atomic and molecular hydrogen adsorption energies; and (4) computes ionization potentials and electron affinities through vacuum-referenced band alignment.
+This matters where the relevant surface or interface is rarely known in advance. In photocatalysis [@maggi2026q1D], activity depends on the exposed facet, on reactant adsorption, and on whether the band edges straddle the redox potentials of the target reaction. In photovoltaics [@lopez2024mlaided], efficiency depends on aligning the absorber's band edges with those of its contacts. The target audience is computational materials scientists who must survey many facets, terminations, and interfaces before committing first-principles resources. The pipeline (1) ranks candidate surfaces by formation energy, at 0 K or, optionally, by free energy at a chosen temperature; (2) constructs heterostructure interfaces between two slabs; (3) estimates atomic and molecular hydrogen adsorption energies; and (4) computes ionization potentials and electron affinities through vacuum-referenced band alignment.
 
 # State of the field
 
@@ -45,7 +45,7 @@ We build on these libraries rather than replace them: slab enumeration and latti
 
 # Software design
 
-![**Overview of the `SurfAIcing` workflow.** Starting from a bulk crystal structure, `SurfAIcing` generates candidate slabs and evaluates their surface energies using either machine-learning interatomic potentials (ML-IAPs) or density functional theory (DFT). The resulting surfaces can then be screened for hydrogen adsorption, vacuum-referenced band alignment, or coherent heterostructure formation. \label{fig:flow-chart}](figure.pdf){width=100%}
+![**Overview of the `SurfAIcing` workflow.** Starting from a bulk crystal structure, `SurfAIcing` generates candidate slabs and evaluates their surface energies using either machine-learning interatomic potentials (ML-IAPs) or density functional theory (DFT), at 0 K or, optionally, as free energies from NPT molecular dynamics (dashed). The resulting surfaces can then be screened for hydrogen adsorption, vacuum-referenced band alignment, or coherent heterostructure formation. \label{fig:flow-chart}](figure.pdf){width=100%}
 
 `SurfAIcing` is a Python library driven by five Jupyter notebooks, one per stage of \autoref{fig:flow-chart}. Screening many candidates cheaply and then refining a few led to four design decisions.
 
@@ -57,7 +57,7 @@ We build on these libraries rather than replace them: slab enumeration and latti
 
 **Notebooks as interface, library for logic.** Parameters sit in notebook cells next to their output, which suits exploratory screening, while all logic lives in scriptable library functions.
 
-**Limitations.** Asymmetric slabs are ranked by the average of their two terminations and non-stoichiometric slabs lack chemical potentials, so individual polar terminations (e.g., wurtzite (0001)) are not resolved; convergence with slab and vacuum thickness is not automated; ML-IAP evaluation uses MACE models; and band alignment requires DFT.
+**Limitations.** Asymmetric slabs are ranked by the average of their two terminations and non-stoichiometric slabs lack chemical potentials, so individual polar terminations (e.g., wurtzite (0001)) are not resolved; convergence with slab and vacuum thickness is not automated; ML-IAP evaluation uses MACE models; and band alignment requires DFT. The finite-temperature free energy uses an effective-harmonic description of the vibrations; it neglects electronic, configurational, and magnetic contributions, and it has not been validated against thermodynamic integration for surfaces. The cell of the slab is not constrained during the NPT run, so the vacuum can thin or the cell shear, and the runs are checked and flagged rather than corrected.
 
 **Slabs and surface-energy ranking.** Slabs are generated up to a maximum Miller index with user-defined slab and vacuum thicknesses, optionally repaired or restricted to symmetric terminations. Each is stored with its Miller index, shift, area, polarity, symmetry, and stoichiometry flags, and a k-point mesh. The surface energy is [@boettger1994]
 
@@ -66,6 +66,20 @@ $$
 $$
 
 where $E_{\text{slab}}$ is the energy of the relaxed slab, $E_{\text{bulk}}$ the bulk energy per formula unit, $N$ the number of formula units in the slab, and $A$ the surface area; the factor of 2 accounts for the two free surfaces. Energies are reported in J/m$^2$, and the flags above are reported with the ranking.
+
+**Finite-temperature surface free energy.** Optionally, the ranking is repeated with free energies. The bulk and every slab get one folder per MD temperature, containing the unrelaxed structure repeated until its lattice vectors reach a minimum length (15 Å by default; in-plane vectors only for slabs, so that the thickness and vacuum are unchanged) and the plan of the run. The structures are propagated in the NPT ensemble with a fully flexible cell (Nosé–Hoover thermostat and Parrinello–Rahman barostat in the scheme of Melchionna *et al.* [@melchionna1993], as implemented in ASE) with the ML-IAP, or with VASP, whose `vasprun.xml` is read instead. The free energy per atom follows the effective-harmonic scheme [@hellman2013],
+
+$$
+F(T) = U_0(T) + F_{\text{vib}}(T), \qquad U_0 = \frac{\langle U_{\text{MD}} \rangle}{N} - \frac{(3N-3)\,k_B T}{2N}, \qquad F_{\text{vib}} = \int g(\omega)\left[\frac{\hbar\omega}{2} + k_B T \ln\left(1 - e^{-\hbar\omega/k_B T}\right)\right] d\omega,
+$$
+
+where $\langle U_{\text{MD}} \rangle$ is the mean potential energy after discarding the first picoseconds, and the vibrational density of states $g(\omega)$, normalized to three modes per atom, is the Fourier transform of the mass-weighted velocity autocorrelation of the run, so that it contains the renormalization of the frequencies at that temperature. The surface free energy is then
+
+$$
+\gamma(T) = \frac{F_{\text{slab}}(T) - N f_{\text{bulk}}(T)}{2A(T)},
+$$
+
+with $f_{\text{bulk}}$ the bulk free energy per atom and $A(T)$ the mean area of the slab cell in the run. The ranking can be evaluated at any operating temperature, not only at the MD temperatures: $U_0 - E_0$ and $A$ are interpolated in temperature through their 0 K values, $F_{\text{vib}}$ is evaluated at the operating temperature with the spectra of the runs, and any extrapolation beyond the highest MD temperature is flagged. Every run is analyzed for equilibration, kinetic temperature, vacuum thickness, and change of the cell, and a warning is attached to each slab whose result may be affected. The 0 K and finite-temperature rankings are reported side by side, with their rank correlation.
 
 **Hydrogen adsorption.** The surface normal is obtained from the lattice vectors, and the top layer of a chosen termination is decomposed with a periodic two-dimensional Voronoi tessellation: atoms define atop sites, pairs sharing a Voronoi ridge define bridge sites, and Voronoi vertices define hollow sites. Sites with equivalent surroundings are merged, and each H$_2$ site is generated perpendicular and parallel to the surface. All configurations and an isolated H$_2$ reference are relaxed at fixed cell, and the lowest-energy configuration per adsorbate gives [@norskov2004]
 
