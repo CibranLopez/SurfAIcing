@@ -1,4 +1,8 @@
-"""ML interatomic potential (MACE) calculations: structural relaxation, single-point energies and molecular dynamics (NVT and NPT)."""
+"""ML interatomic potential (MACE) calculations: structural relaxation, single-point energies and molecular dynamics (NVT and NPT).
+
+Relaxations and single points give static (0 K) energies E_0, the zero-temperature level of the free (Gibbs) energy G. The NPT
+runs sample G(T, P); ``libraries.thermal`` turns them into the finite-temperature free energy G(T) = U_0(T) + F_vib(T).
+"""
 import inspect
 import json
 
@@ -60,7 +64,8 @@ def structural_relaxation(
         This function facilitates the relaxation of a structure file using a pre-trained
         machine learning potential. The relaxation can be constrained to keep the simulation
         cell fixed or allow the relaxation of both positions and the cell itself. The relaxed
-        structure is saved to a specified output directory.
+        structure is saved to a specified output directory. It is the minimum of the static energy E_0, i.e. the 0 K
+        level of the free energy G (at P = 0 also when the cell is relaxed).
 
         Parameters:
             path_to_structure (str):   Path to the file containing the structure in VASP format.
@@ -138,7 +143,7 @@ def single_shot_energy_calculation(
         dispersion        (bool): Whether to include the D3 dispersion correction in the model.
 
     Returns:
-        float:         The computed potential energy of the molecular structure.
+        float:         The computed potential energy of the structure: its static (0 K) energy E_0, the 0 K level of G.
         numpy.ndarray: The computed forces on every atom in the molecular structure.
         numpy.ndarray: The computed stress tensor of the molecular structure.
 
@@ -274,6 +279,9 @@ def npt_dynamics(
     thermostat combined with a Parrinello-Rahman barostat. The cell is FULLY flexible (no component is frozen), so
     the structure does not need to be relaxed beforehand. The structure may be rotated rigidly (see
     ``make_cell_upper_triangular``); nothing else about it changes.
+
+    NPT samples the Gibbs ensemble G(T, P). The mean potential energy of the run and the vibrational spectrum of its
+    momenta give the free energy G(T) = U_0 + F_vib (``libraries.thermal``; no P V term is included there).
 
     Writes to ``output_folder``: ``output.traj`` (every ``loginterval`` steps: positions, cell, momenta, potential
     energy, forces, stress), ``npt.log`` and ``CONTCAR`` (last frame). The momenta are what the vibrational density of

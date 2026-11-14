@@ -1,5 +1,9 @@
 """Relaxing structures with the ML-IAP and looking up energies, from DFT (vasprun.xml) or from the ML-IAP.
 
+The energies returned here are static (0 K) energies E_0 of relaxed structures: the zero-temperature level of the free
+(Gibbs) energy, G(0 K) = E_0 (no zero-point energy, no entropy, no other thermal term). Finite-temperature free
+energies are evaluated from MD runs in ``libraries.thermal``.
+
 Priority when an energy is requested for a folder: vasprun.xml (DFT) > single_shot_energy file > ML-IAP single point
 on the CONTCAR (a POSCAR is first relaxed with the ML-IAP at fixed cell).
 """
@@ -76,8 +80,9 @@ def check_energy_sources(
 ):
     """Warn if the energies entering one calculation come from different levels of theory.
 
-    Energy differences (surface energy, adsorption energy, adhesion energy) are only meaningful if
-    every term is evaluated with the same method. read_energy silently prefers vasprun.xml over the
+    Free-energy differences (surface energy, adsorption energy, adhesion energy) are only meaningful if
+    every term is evaluated with the same method and at the same level of the free energy (all static 0 K energies,
+    or all free energies at the same temperature). read_energy silently prefers vasprun.xml over the
     ML-IAP, so a folder that happens to contain a DFT run would otherwise be mixed with ML-IAP
     energies without any notice. Also warns if a relaxed CONTCAR was produced by a different ML-IAP
     model than the one that will evaluate its energy.
@@ -113,7 +118,7 @@ def read_energy(
         model_load_path=DEFAULT_MODEL,
         device=DEFAULT_DEVICE
 ):
-    """Read the energy of a structure from a given folder.
+    """Read the static (0 K) energy E_0 of a structure from a given folder: the 0 K level of its free energy G.
 
     Priority: vasprun.xml (DFT) > single_shot_energy file > ML-IAP single point on CONTCAR. If there is
     only a POSCAR, it is first relaxed with the ML-IAP (fixed cell) to produce the CONTCAR. A CONTCAR
@@ -125,7 +130,8 @@ def read_energy(
         device (str): Device to run the computation on, e.g. 'cuda' or 'cpu'. Default is 'cpu'.
 
     Returns:
-        ssc_energy (float): Single-shot energy of the structure (NaN if it could not be obtained)
+        ssc_energy (float): Static energy E_0 of the relaxed structure in eV, G at 0 K without zero-point energy
+            (NaN if it could not be obtained)
     """
     ssc_energy = np.nan
     vasprun_file = None

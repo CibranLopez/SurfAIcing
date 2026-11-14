@@ -29,10 +29,11 @@ def plot_ranking(
     ylabel=r'$E_{\text{surface}}$ (J/m$^2$)',
     dpi=50
 ):
-    """Plot the ranking of the slabs based on their energy differences.
+    """Plot the ranking of the slabs by their surface (free) energy.
 
     Args:
-        surface_energies_of_formation (pd.DataFrame): Energy differences of the slabs.
+        surface_energies_of_formation (pd.DataFrame): Surface free energies of the slabs (one row, one column per slab),
+            at whatever level they were computed (static 0 K, G = E_0, or at a temperature).
         filename      (str):          Filename to save the plot.
         figsize       (tuple):        Size of the figure.
         ylabel        (str):          Label for the y-axis.
@@ -73,7 +74,8 @@ def plot_ranking_comparison(
     ylabel=r'$\gamma$ (J/m$^2$)',
     dpi=50
 ):
-    """Plot the surface energy of every slab at 0 K and at the operating temperature, sorted by the latter.
+    """Plot the surface free energy of every slab at the static 0 K level (G = E_0) and at the operating temperature
+    (G(T) = U_0 + F_vib), sorted by the latter.
 
     Args:
         ranking (pd.DataFrame): Output of ``thermal.surface_free_energy_ranking`` (index: slab folders; columns

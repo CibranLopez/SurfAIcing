@@ -329,7 +329,7 @@ def split_interface(
     """Film and substrate atoms of an interface, each as its own Structure **in the interface cell**.
 
     Because the interface is built on the substrate in-plane lattice, the film in it is strained. Using these parts as
-    the isolated-film and isolated-substrate references puts the three energies of the adhesion energy in the same
+    the isolated-film and isolated-substrate references puts the three free energies of the adhesion energy in the same
     strained cell, so the strain energy of the film cancels instead of being counted as adhesion.
     """
     labels = np.array(interface.site_properties['interface_label'])
@@ -379,13 +379,26 @@ def get_adhesion_energy_of_formation(
         substrate_energy,
         interface_area
 ):
-    r"""Adhesion energy of formation of an interface, in J/m^2:
+    r"""Adhesion free energy of formation of an interface, in J/m^2, from the free (Gibbs) energies G of the interface
+    and of the isolated film and substrate:
 
     \begin{equation}
-        E_{adhesion} = \frac{E_{interface} - E_{film} - E_{substrate}}{A}
+        \Delta G_{adhesion} = \frac{G_{interface} - G_{film} - G_{substrate}}{A}
     \end{equation}
 
-    Analogous to get_surface_energy_of_formation, but normalized by a single interface (not the two free surfaces of
-    an isolated slab). Energies are total energies in eV and the area is in Angstrom^2 (1 eV/Angstrom^2 = 16.0218 J/m^2).
+    Analogous to ``surfaces.get_surface_energy_of_formation``, but normalized by a single interface (not the two free
+    surfaces of an isolated slab). The function is the same at every level; only the free energies that are passed in
+    change: the static 0 K energies E_0 (``energy_lookup.read_energy``), or G(T) at a temperature (the three at the same
+    level and, as in ``split_interface``, in the same strained cell). G is whatever sum of terms the caller includes.
+    Free energies are in eV and the area in Angstrom^2 (1 eV/Angstrom^2 = 16.0218 J/m^2).
+
+    Args:
+        interface_energy (float): Free energy of the interface (eV); E_0 at 0 K.
+        film_energy (float): Free energy of the film atoms alone, in the interface cell (eV), at the same level.
+        substrate_energy (float): Free energy of the substrate atoms alone, in the interface cell (eV), at the same level.
+        interface_area (float): Area of the interface (Angstrom^2).
+
+    Returns:
+        float: Adhesion free energy in J/m^2.
     """
     return (interface_energy - film_energy - substrate_energy) * 16.0218 / interface_area

@@ -1,28 +1,48 @@
-"""Finite-temperature surface energies: NPT folders, MD analysis and the surface free energy gamma(T).
+"""Finite-temperature surface free energies: NPT folders, MD analysis and the surface free energy gamma(T).
 
-Surface energies at 0 K compare total energies. At finite temperature the quantity to compare is the Helmholtz free
-energy, which is obtained here from NPT molecular dynamics with the effective-harmonic scheme (Hellman et al., PRB 87,
-104111 (2013)), the same one used for the anharmonic level of HeatUp:
+Every surface quantity of this library is a difference of free (Gibbs) energies G of the slab and of the bulk,
 
-    F(T) = U0(T) + F_vib[omega_eff(T)]                                          (per atom, P = 0 so no PV term)
+    gamma = [ G_slab - N g_bulk ] / (2 A)
+
+and what changes between the 0 K ranking and the finite-temperature one is only the LEVEL at which G is evaluated, that is,
+which contributions G is made of:
+
+    level                     G per atom                      evaluated by
+    static, 0 K               G = E0                          energy_lookup.read_energy
+    vibrational, finite T     G(T) = U0(T) + F_vib(T)         thermal_terms (this module)
+
+G is a sum of terms and nothing downstream depends on which ones: ``thermal_terms`` collects them in a dictionary and sums
+them, and ``surfaces.get_surface_energy_of_formation`` only sees the total. A further contribution (a P V term, an electronic
+or configurational entropy, ...) is one more term and needs no other change; none is included today. The static level has
+neither zero-point energy nor entropy, so G(T -> 0) = E0 + F_vib(0 K) differs from E0 by the zero-point energy.
+
+Finite-T level. G comes from NPT molecular dynamics with the effective-harmonic scheme (Hellman et al., PRB 87, 104111 (2013)),
+the same one used for the anharmonic level of HeatUp:
+
+    G(T) = U0(T) + F_vib[omega_eff(T)]                                          (per atom)
 
     U0(T)   = <U_MD> / N - (3N - 3) k T / (2 N)        mean MD potential energy minus the classical harmonic part
     F_vib   = int g(omega) [ omega/2 + k T ln(1 - exp(-omega/kT)) ] domega       quantum oscillators, zero-point included
 
 ``g(omega)`` is the vibrational density of states of the MD run: the Fourier transform of the mass-weighted velocity
 autocorrelation, normalised to 3 modes per atom. It contains the anharmonic renormalisation of the frequencies at the
-temperature and cell of the run ("effective" harmonic spectrum).
+temperature and cell of the run ("effective" harmonic spectrum). U0 is the part of G that is not vibrational: the energy of
+the effective-harmonic model at the structure and cell the run explores (it grows with T through the thermal expansion and
+the anharmonic shifts), since the MD ions are classical and the classical harmonic thermal energy has been removed from <U_MD>.
 
-The surface free energy is then (same expression as at 0 K, with free energies and the area at temperature T)
+The surface free energy is then (same expression as at 0 K, with the free energies and the area at temperature T)
 
-    gamma(T) = [ F_slab(T) - N f_bulk(T) ] / (2 A(T)),        f_bulk per atom from an NPT run of the bulk.
+    gamma(T) = [ G_slab(T) - N g_bulk(T) ] / (2 A(T)),        g_bulk per atom from an NPT run of the bulk.
 
-Operating temperature. The ranking can be evaluated at any temperature T_op, not only at the MD temperatures:
-    * U0 - E0 (and the area) are interpolated in T through the anchor (0 K, 0), PCHIP with two or more MD temperatures,
-      linear with one; above the highest MD temperature they are extrapolated linearly and flagged;
-    * F_vib(T_op) is evaluated with the spectra of the MD runs and interpolated linearly in T between the two
-      neighbouring MD temperatures (constant outside the range, flagged).
-    E0 is the 0 K energy of the relaxed structure, read exactly as in the 0 K ranking (``energy_lookup.read_energy``).
+E0 is not part of G(T). U0 comes straight from the NPT run, so G = U0 + F_vib makes no reference to the 0 K energy. E0 only
+defines the static 0 K column of the ranking and the information column ``dU0_eV`` (U0 - E0, the thermal shift of the
+non-vibrational part, slab minus bulk).
+
+Operating temperature. The ranking can be evaluated at any temperature T_op, not only at the MD temperatures. F_vib is the only
+term evaluated at T_op: it is computed exactly at T_op from the vibrational spectrum of the MD run closest in temperature, and
+U0 and the area are those of that run. That assumes that the phonons (and U0, A) do not change between the temperature of the
+run and T_op, a small approximation for a modest difference; a flag is raised when they differ by more than ``T_RUN_TOL_K``.
+Run the MD at the temperature you need to remove the assumption.
 
 Folder convention (next to POSCAR/CONTCAR of every slab and of the bulk):
 
@@ -62,6 +82,7 @@ MIN_PRODUCTION_PS = 5.0              # shorter production runs are flagged
 EPOT_DRIFT_TOL   = 5e-4              # eV/atom, drift of the potential energy over the production run that is flagged
 VACUUM_MIN_A     = 6.0               # a slab whose vacuum gets thinner than this is flagged (range of the MACE models)
 C_CHANGE_TOL     = 0.10              # relative change of the length of c of a slab that is flagged
+T_RUN_TOL_K      = 1.0               # K, an operating temperature further than this from the MD run it uses is flagged
 
 
 class MissingData(Exception):
@@ -482,7 +503,9 @@ def compute_vdos(data, max_lag_ps=VDOS_MAX_LAG_PS):
 
 
 def f_vib(omega_meV, weight, temperature):
-    """Quantum harmonic vibrational free energy per atom (eV) of a spectrum (modes with omega <= OMEGA_MIN_MEV skipped)."""
+    """Quantum harmonic vibrational free energy F_vib per atom (eV) of a spectrum (modes with omega <= OMEGA_MIN_MEV skipped).
+
+    At T = 0 it is the zero-point energy, sum of g(omega) omega / 2."""
     omega, weight = np.asarray(omega_meV, float), np.asarray(weight, float)
     m = omega > OMEGA_MIN_MEV
     om, w = omega[m], weight[m]
@@ -518,8 +541,14 @@ def analyse_md_run(
 ):
     """Everything the free energy needs from one finished run; cached in ``md_analysis.json``.
 
+    The result holds what the free energy G(T) = U0 + F_vib of the run is made of (``u0_eV_per_atom``, the spectrum
+    ``vdos`` for F_vib, the mean area) and the flags raised by the quality checks.
+
     ``n_cell_dof``: number of cell degrees of freedom whose kT/2 each is subtracted from <U> in U0 on top of the
-    3N - 3 atomic ones. The default 0 keeps the HeatUp prescription (see the discussion in the module notes).
+    3N - 3 atomic ones. A fluctuating cell (NPT) stores potential energy in the strain too, so counting the strain modes
+    (up to 6 for an upper-triangular cell) would be the stricter equipartition count; the default 0 keeps the HeatUp
+    prescription (atomic 3N - 3 only). The per-atom effect of the extra modes goes as 1/N, so it does not cancel between a
+    slab and a bulk cell of different size.
     """
     plan = read_md_json(md_dir)
     source = _vasprun_path(md_dir) or os.path.join(md_dir, 'output.traj')
@@ -597,67 +626,46 @@ def analyse_md_run(
 # free energy at an operating temperature
 # ---------------------------------------------------------------------------------------------------------------
 
-def _through_origin(temperature, md_temperatures_K, offsets, flags, what):
-    """Value at `temperature` of a quantity known at the MD temperatures as an offset from its 0 K value.
-
-    Interpolated through the anchor (0 K, 0): linear with one MD temperature, PCHIP with more; linear
-    extrapolation above the highest one (flagged).
-    """
-    from scipy.interpolate import PchipInterpolator
-    tt = np.r_[0.0, np.asarray(md_temperatures_K, float)]
-    cc = np.r_[0.0, np.asarray(offsets, float)]
-    if temperature <= tt[-1]:
-        if len(tt) == 2:
-            return float(np.interp(temperature, tt, cc))
-        return float(PchipInterpolator(tt, cc)(temperature))
-    slope = (cc[-1] - cc[-2]) / (tt[-1] - tt[-2])
-    flags.append(f'{what} extrapolated linearly from {tt[-1]:g} K to {temperature:g} K (no MD run at or above T)')
-    return float(cc[-1] + slope * (temperature - tt[-1]))
-
-
 def thermal_terms(
         folder,
         operating_T,
-        e0_per_atom,
-        area0=None,
         equil_ps=EQUIL_PS,
         vdos_max_lag_ps=VDOS_MAX_LAG_PS,
         n_cell_dof=0
 ):
-    """F(T_op) = E0 + [U0(T_op) - E0] + F_vib(T_op) per atom for the structure in `folder`, from its finished MD runs.
+    """Free (Gibbs) energy per atom G(T_op) of the structure in `folder`, as a sum of terms, from its finished MD runs.
+
+    G(T_op) = U0 + F_vib(T_op). The terms are collected in a dictionary and G is their sum, so a further contribution
+    (a P V term, an entropy, ...) is one more entry and nothing else changes; none is included today.
+
+    The MD run whose temperature is closest to `operating_T` (the lower one in a tie) provides U0, the area and the
+    vibrational spectrum. Only F_vib is evaluated at `operating_T`, with that spectrum: the phonons (and U0, A) are assumed
+    not to change between the temperature of the run and `operating_T`. A flag is raised when the two differ by more than
+    ``T_RUN_TOL_K``. At an MD temperature nothing is assumed. E0 does not enter (see the module notes).
 
     Args:
         folder (str): Slab or bulk folder with ``md/<T>K`` runs.
         operating_T (float): Temperature of the evaluation (K); need not be an MD temperature.
-        e0_per_atom (float): 0 K energy per atom of the relaxed structure, in eV (same level of theory as the MD).
-        area0 (float): 0 K area of the slab cell (A^2); if given, the area at T_op is returned too.
 
     Returns:
-        dict: 'F_eV_per_atom', 'E0', 'dU0', 'F_vib', 'area_A2', 'n_atoms_cell', 'md_temperatures_K', 'flags'.
+        dict: 'G_eV_per_atom' (sum of the terms), one entry per term ('U0', 'F_vib'), 'area_A2' (mean area of one cell of
+            the run), 'n_atoms_cell', 'T_run_K' (temperature of the run used), 'md_temperatures_K' (finished runs), 'flags'.
     """
-    runs = []
-    for temperature in md_temperatures(folder):
-        md_dir = md_run_dir(folder, temperature)
-        if md_state(md_dir) == 'done':
-            runs.append(analyse_md_run(md_dir, equil_ps, vdos_max_lag_ps, n_cell_dof))
-    if not runs:
+    done = [temperature for temperature in md_temperatures(folder) if md_state(md_run_dir(folder, temperature)) == 'done']
+    if not done:
         raise MissingData(f'no finished MD run in {folder}/md')
-    runs.sort(key=lambda r: r['temperature_K'])
-    t_md = [r['temperature_K'] for r in runs]
-    flags = [f"{r['temperature_K']:g} K: {x}" for r in runs for x in r['flags']]
+    t_run = min(done, key=lambda temperature: abs(temperature - operating_T))      # ascending: a tie gives the lower T
+    run = analyse_md_run(md_run_dir(folder, t_run), equil_ps, vdos_max_lag_ps, n_cell_dof)
 
-    d_u0 = _through_origin(operating_T, t_md, [r['u0_eV_per_atom'] - e0_per_atom for r in runs], flags, 'U0')
-    curves = [f_vib(r['vdos']['omega_meV'], r['vdos']['weight'], operating_T) for r in runs]
-    fv = float(np.interp(operating_T, t_md, curves))
-    if operating_T < t_md[0] or operating_T > t_md[-1]:
-        flags.append(f'T = {operating_T:g} K is outside the MD range [{t_md[0]:g}, {t_md[-1]:g}] K: the vibrational '
-                     f'spectrum is that of the nearest run')
+    flags = [f"{t_run:g} K: {x}" for x in run['flags']]
+    if abs(t_run - operating_T) > T_RUN_TOL_K:
+        flags.append(f'T = {operating_T:g} K: U0, the area and the vibrational spectrum are those of the MD run at {t_run:g} K '
+                     f'(assumed unchanged; only F_vib is evaluated at T)')
 
-    out = {'E0': e0_per_atom, 'dU0': d_u0, 'F_vib': fv, 'F_eV_per_atom': e0_per_atom + d_u0 + fv,
-           'n_atoms_cell': runs[0]['n_atoms_cell'], 'md_temperatures_K': t_md, 'flags': flags, 'area_A2': None}
-    if area0 is not None:
-        out['area_A2'] = area0 + _through_origin(operating_T, t_md, [r['area_A2'] - area0 for r in runs], [], 'area')
-    return out
+    terms = {'U0': run['u0_eV_per_atom'],
+             'F_vib': f_vib(run['vdos']['omega_meV'], run['vdos']['weight'], operating_T)}
+    return {'G_eV_per_atom': float(sum(terms.values())), **terms, 'area_A2': run['area_A2'],
+            'n_atoms_cell': run['n_atoms_cell'], 'T_run_K': t_run, 'md_temperatures_K': done, 'flags': flags}
 
 
 def check_md_consistency(folders, model_load_path):
@@ -679,7 +687,7 @@ def check_md_consistency(folders, model_load_path):
             code = 'VASP' if _is_vasp_run(md_run_dir(folder, temperature)) else 'MACE'
             if (code == 'VASP') != (source == 'DFT'):
                 messages.append(f"{os.path.basename(folder.rstrip('/'))}: the MD is {code} but its 0 K energy comes "
-                                f"from {source}; the anchor U0 - E0 mixes levels of theory")
+                                f"from {source}; the 0 K column and dU0 are then at another level of theory than G(T)")
     if len(codes) > 1:
         messages.append(f'MD runs come from different codes {sorted(codes)}: the free-energy differences are not meaningful')
     for message in messages:
@@ -699,10 +707,12 @@ def surface_free_energy_ranking(
 ):
     """gamma(T_op) of every slab of a ``slab_v<i>`` folder next to the 0 K surface energy.
 
-    gamma(T) = [F_slab(T) - N f_bulk(T)] / (2 A(T)) with F = E0 + (U0 - E0) + F_vib per atom (see the module notes) and
-    the area A(T) from the NPT runs. A slab without a finished MD run gets NaN and a flag instead of stopping the
-    ranking; the bulk needs one. The 0 K column is computed from the same E0, so the difference between the two columns
-    is purely thermal.
+    gamma(T) = [G_slab(T) - N g_bulk(T)] / (2 A(T)) with G = U0 + F_vib per atom (see ``thermal_terms`` and the module
+    notes) and the area from the NPT run used; ``surfaces.get_surface_energy_of_formation`` does the arithmetic. A slab
+    without a finished MD run gets NaN and a flag instead of stopping the ranking; the bulk needs one. The 0 K column is
+    the static level, G = E0, through the same function, so the difference between the two columns (``delta_J_m2``) is
+    the thermal part: the change of the non-vibrational energy (``dU0_eV``, U0 - E0, slab minus bulk), F_vib (``dFvib_eV``,
+    zero-point energy included) and the change of the area.
 
     Returns:
         pandas.DataFrame indexed by slab folder, sorted by gamma(T): energies in J/m^2, areas, ranks at 0 K and at T,
@@ -722,7 +732,7 @@ def surface_free_energy_ranking(
     bulk_data = surfaces.load_json(os.path.join(bulk_folder, 'slab_data.json'))
     n_bulk = bulk_data['number_of_sites']
     e0_bulk = energy_lookup.read_energy(bulk_folder, model_load_path=model_load_path, device=device)
-    bulk = thermal_terms(bulk_folder, operating_T, e0_bulk / n_bulk, **kwargs)        # MissingData if the bulk has no run
+    bulk = thermal_terms(bulk_folder, operating_T, **kwargs)        # MissingData if the bulk has no run
     check_md_consistency([bulk_folder] + [os.path.join(slab_folder, n) for n in names], model_load_path)
 
     rows = {}
@@ -738,16 +748,16 @@ def surface_free_energy_ranking(
                'symmetric': slab_data.get('is_symmetric', 'unknown'), 'polar': slab_data.get('is_polar', 'unknown'),
                'stoichiometric': slab_data.get('is_stoichiometric', 'unknown')}
         try:
-            terms = thermal_terms(folder, operating_T, e0 / n, area0=area0, **kwargs)
+            terms = thermal_terms(folder, operating_T, **kwargs)
             row['surface_energy_T_J_m2'] = surfaces.get_surface_energy_of_formation(
-                n * terms['F_eV_per_atom'], n * bulk['F_eV_per_atom'], terms['area_A2'])
+                n * terms['G_eV_per_atom'], n * bulk['G_eV_per_atom'], terms['area_A2'])
             row['area_T_A2'] = terms['area_A2']
-            row['dU0_eV'] = n * (terms['dU0'] - bulk['dU0'])
+            # information only (E0 is not part of G(T)): thermal shift of the non-vibrational part, slab minus bulk
+            row['dU0_eV'] = (n * terms['U0'] - e0) - n * (bulk['U0'] - e0_bulk / n_bulk)
             row['dFvib_eV'] = n * (terms['F_vib'] - bulk['F_vib'])
             flags = list(terms['flags'])
-            if terms['md_temperatures_K'] != bulk['md_temperatures_K']:
-                flags.append(f"slab MD temperatures {terms['md_temperatures_K']} differ from the bulk ones "
-                             f"{bulk['md_temperatures_K']}")
+            if terms['T_run_K'] != bulk['T_run_K']:
+                flags.append(f"the slab uses the MD run at {terms['T_run_K']:g} K, the bulk the one at {bulk['T_run_K']:g} K")
             row['flags'] = '; '.join(flags)
         except MissingData as exc:
             row['flags'] = f'no finite-temperature result: {exc}'

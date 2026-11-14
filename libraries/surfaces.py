@@ -1,4 +1,9 @@
-"""Bulk preparation, slab metadata and surface energies."""
+"""Bulk preparation, slab metadata and surface (free) energies.
+
+Every surface quantity here is a difference of free (Gibbs) energies G of the slab and of the bulk it was cut from. The
+functions only do that arithmetic: the G that is passed in decides the level of the result, the static 0 K energy
+G = E0 (``energy_lookup.read_energy``) or the finite-temperature G(T) = U0(T) + F_vib(T) (``thermal.thermal_terms``).
+"""
 import json
 import os
 import shutil
@@ -89,26 +94,34 @@ def get_surface_energy_of_formation(
         bulk_energy_times_fu,
         surface_area
 ):
-    r"""Compute the surface energy of formation according to:
+    r"""Surface energy of formation from the free (Gibbs) energies of the slab and of the bulk it was cut from:
 
     \begin{equation}
-        E_{surface} = \frac{E_{slab} - E_{bulk}}{2 S}
+        \gamma = \frac{G_{slab} - N g_{bulk}}{2 A}
     \end{equation}
 
-    The slab energy and the bulk energy (already scaled to the slab composition) are total energies
-    in eV and the surface area is in Angstrom^2. The returned value is the surface energy per unit
-    area, expressed in J/m^2 (1 eV/Angstrom^2 = 16.0218 J/m^2).
+    where ``G_slab`` is the free energy of the slab, ``N g_bulk`` the free energy of the bulk scaled to the composition
+    of the slab (N formula units, or the bulk value per atom times the number of atoms of the slab) and ``A`` the area of
+    one surface. The function is the same at every level; only the free energies that are passed in change:
 
-    The factor of 2 assumes that both surfaces of the slab are equivalent. For asymmetric slabs
-    the result is the average over the two terminations.
+    * 0 K (static): G = E_0, the total energy of the relaxed structure (``energy_lookup.read_energy``), and A the 0 K area.
+    * finite temperature: G(T) = U_0 + F_vib(T) from NPT runs (``thermal.thermal_terms``), and A the area of the run.
+
+    G is whatever sum of terms the caller includes (today E_0 at 0 K and U_0 + F_vib at finite temperature, with no P V
+    term); further terms can be added to G without touching this function. Free energies are in eV and the area in
+    Angstrom^2; the result is in J/m^2 (1 eV/Angstrom^2 = 16.0218 J/m^2).
+
+    The factor of 2 assumes that both surfaces of the slab are equivalent. For asymmetric slabs the result is the
+    average over the two terminations. A non-stoichiometric slab would need chemical potentials instead of the bulk
+    reference.
 
     Args:
-        slab_energy (float): Slab energy.
-        bulk_energy_times_fu (float): Bulk energy.
-        surface_area (float): Surface area.
+        slab_energy (float): Free energy G_slab of the slab (eV) at the chosen level (E_0 at 0 K).
+        bulk_energy_times_fu (float): Free energy of the bulk scaled to the slab composition, N g_bulk (eV), at the same level.
+        surface_area (float): Area A of one surface of the slab (Angstrom^2); the area at temperature T for G(T).
 
     Returns:
-        surface_energy_of_formation (float): Surface energy of formation in J/m^2.
+        surface_energy_of_formation (float): Surface free energy of formation in J/m^2.
 
     """
     return (slab_energy - bulk_energy_times_fu) * 16.0218 / (2 * surface_area)
