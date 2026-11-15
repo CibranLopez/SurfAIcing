@@ -1,3 +1,13 @@
+"""Coherent film/substrate interfaces: matching, candidates, and the adhesion free energy.
+
+The adhesion quantity is a free (Gibbs) energy difference per interface area,
+
+    dG_adh = [ G_interface - G_film - G_substrate ] / A
+
+at the static 0 K level (G = E0, ``get_adhesion_energy_of_formation`` with the energies of ``energy_lookup``) or at finite
+temperature, G(T) = U0 + F_vib from the NPT runs of the interface, the film and the substrate (``adhesion_free_energy``). The film and the
+substrate are the film and substrate atoms of the interface alone, in the interface cell (``split_interface``).
+"""
 import json
 import os
 
@@ -402,3 +412,137 @@ def get_adhesion_energy_of_formation(
         float: Adhesion free energy in J/m^2.
     """
     return (interface_energy - film_energy - substrate_energy) * 16.0218 / interface_area
+
+
+# ---------------------------------------------------------------------------------------------
+# Adhesion FREE energy at a temperature
+# ---------------------------------------------------------------------------------------------
+CELL_MATCH_TOL = 0.01      # relative difference of the areas of the film/substrate cells and the interface that is flagged
+
+
+def adhesion_free_energy(
+        candidate_folder,
+        reference_folder,
+        operating_T,
+        equil_ps=None,
+        vdos_max_lag_ps=None,
+        n_cell_dof=0
+):
+    """Adhesion free energy of one interface at `operating_T`, from the NPT runs of the interface, of the film and of the substrate.
+
+        dG_adh = [ G_interface - G_film - G_substrate ] / A
+
+    Each G is U0 + F_vib per atom of its own runs (``thermal.thermal_terms``) times the atoms of its cell; the film and the
+    substrate are the film and the substrate atoms of the interface alone, in the interface cell (``split_interface``;
+    ``<reference_folder>/film`` and ``<reference_folder>/substrate``). A is the mean area of the interface cell in its run (the
+    fixed area if the cell is fixed). ``get_adhesion_energy_of_formation`` does the arithmetic, for the total and for each term of G.
+
+    The three structures should be run with the same ``fix_cell`` (the one used when preparing the runs). With a fully
+    flexible cell (the default) the film and the substrate references relax the strain that the interface cell imposes on them,
+    so their free energy no longer contains it and the strain energy of the film ends up in dG_adh; fixing the in-plane
+    lattice ('xy' or 'all') keeps the references in the interface cell, as the 0 K adhesion energy does. A flag reports a
+    reference whose mean area differs from the interface by more than ``CELL_MATCH_TOL``, and a different treatment of the cell
+    or a different run temperature among the three.
+
+    Returns:
+        dict: 'adhesion_T_J_m2', 'terms_J_m2' (contribution of every term of G, adding up to the total), 'area_T_A2', 'G_eV'
+            (interface, film, substrate), 'T_run_K' (the three), 'fix_cell', 'flags'.
+    """
+    import libraries.thermal as thermal
+    kwargs = dict(equil_ps=equil_ps, vdos_max_lag_ps=thermal.VDOS_MAX_LAG_PS if vdos_max_lag_ps is None else vdos_max_lag_ps,
+                  n_cell_dof=n_cell_dof)
+    parts = {'interface': candidate_folder,
+             'film': os.path.join(reference_folder, 'film'),
+             'substrate': os.path.join(reference_folder, 'substrate')}
+    runs = {name: thermal.thermal_terms(folder, operating_T, **kwargs) for name, folder in parts.items()}   # MissingData
+    interface = runs['interface']
+    area = interface['area_A2']
+
+    term_names = list(interface['terms'])
+    g = {name: run['n_atoms_cell'] * run['G_eV_per_atom'] for name, run in runs.items()}
+    terms = {t: get_adhesion_energy_of_formation(
+                 interface['n_atoms_cell'] * interface['terms'][t],
+                 runs['film']['n_atoms_cell'] * runs['film']['terms'].get(t, 0.0),
+                 runs['substrate']['n_atoms_cell'] * runs['substrate']['terms'].get(t, 0.0), area)
+             for t in term_names}
+
+    flags = [f'interface {f}' for f in interface['flags']]
+    for name in ('film', 'substrate'):
+        flags += [f'{name} {f}' for f in runs[name]['flags']]
+    n_parts = runs['film']['n_atoms_cell'] + runs['substrate']['n_atoms_cell']
+    if n_parts != interface['n_atoms_cell']:
+        flags.append(f"the film and the substrate have {n_parts} atoms in total, the interface {interface['n_atoms_cell']}")
+    cells = {run['fix_cell'] for run in runs.values()}
+    if len(cells) > 1:
+        flags.append('the cell is treated differently in the three runs (' + ', '.join(f"{n}: {r['fix_cell']!r}" for n, r in runs.items()) + ')')
+    for name in ('film', 'substrate'):
+        change = runs[name]['area_A2'] / area - 1.0
+        if abs(change) > CELL_MATCH_TOL:
+            flags.append(f'the {name} cell has {100 * change:+.1f}% of the interface area: its strain is relaxed in the reference '
+                         f'(strain energy of the {name} is part of the adhesion free energy; fix the in-plane cell to remove it)')
+    if len({run['T_run_K'] for run in runs.values()}) > 1:
+        flags.append('the three structures use MD runs at different temperatures: ' + ', '.join(f"{n} {r['T_run_K']:g} K" for n, r in runs.items()))
+
+    return {'adhesion_T_J_m2': float(sum(terms.values())), 'terms_J_m2': terms, 'area_T_A2': float(area), 'G_eV': g,
+            'T_run_K': {n: r['T_run_K'] for n, r in runs.items()}, 'fix_cell': interface['fix_cell'], 'flags': flags}
+
+
+def adhesion_free_energy_ranking(
+        candidates,
+        operating_T,
+        equil_ps=None,
+        vdos_max_lag_ps=None,
+        n_cell_dof=0
+):
+    """Adhesion free energy at `operating_T` of every candidate interface next to its 0 K value.
+
+    `candidates` is a list of dicts with 'candidate_folder' and 'reference_folder' (as in ``generate-heterstructure``).
+    The 0 K column is ``adhesion_energy`` of the ``candidate_data.json`` of the candidate (the static level, G = E_0, written by the
+    0 K step; NaN if it was not computed). A candidate without finished runs gets NaN and a flag.
+
+    Returns:
+        pandas.DataFrame sorted by the adhesion free energy at T: adhesion_0K_J_m2, adhesion_T_J_m2, area_T_A2, one
+        ``d_<term>_J_m2`` column per term of G, effective_twist, strain, ranks at 0 K and at T and the flags;
+        ``df.attrs['kendall_tau']`` compares the two rankings.
+    """
+    import pandas as pd
+    import libraries.thermal as thermal
+    rows = {}
+    term_names = []
+    for candidate in candidates:
+        folder = candidate['candidate_folder']
+        data_file = os.path.join(folder, 'candidate_data.json')
+        data = json.load(open(data_file)) if os.path.exists(data_file) else {}
+        row = {'adhesion_0K_J_m2': data.get('adhesion_energy', np.nan), 'adhesion_T_J_m2': np.nan, 'area_T_A2': np.nan,
+               'effective_twist': data.get('effective_twist', np.nan), 'strain': data.get('strain', np.nan), 'flags': ''}
+        try:
+            result = adhesion_free_energy(folder, candidate['reference_folder'], operating_T, equil_ps, vdos_max_lag_ps, n_cell_dof)
+            row['adhesion_T_J_m2'] = result['adhesion_T_J_m2']
+            row['area_T_A2'] = result['area_T_A2']
+            for name, value in result['terms_J_m2'].items():
+                row[f'd_{name}_J_m2'] = value
+                if name not in term_names:
+                    term_names.append(name)
+            row['flags'] = '; '.join(result['flags'])
+        except thermal.MissingData as exc:
+            row['flags'] = f'no finite-temperature result: {exc}'
+        rows[folder] = row
+
+    df = pd.DataFrame(rows).T
+    for col in ['adhesion_0K_J_m2', 'adhesion_T_J_m2', 'area_T_A2', 'effective_twist', 'strain'] + [f'd_{t}_J_m2' for t in term_names]:
+        if col in df:
+            df[col] = df[col].astype(float)
+    valid = df.dropna(subset=['adhesion_T_J_m2'])
+    df['rank_0K'] = np.nan
+    df['rank_T'] = np.nan
+    df.loc[valid.index, 'rank_T'] = valid['adhesion_T_J_m2'].rank(method='min')
+    df.loc[valid.index, 'rank_0K'] = valid['adhesion_0K_J_m2'].rank(method='min')
+    df = df.sort_values('adhesion_T_J_m2')
+    both = valid.dropna(subset=['adhesion_0K_J_m2'])
+    tau = np.nan
+    if len(both) >= 2:
+        from scipy.stats import kendalltau
+        tau = float(kendalltau(both['adhesion_0K_J_m2'], both['adhesion_T_J_m2'])[0])
+    df.attrs['kendall_tau'] = tau
+    df.attrs['operating_T'] = operating_T
+    return df

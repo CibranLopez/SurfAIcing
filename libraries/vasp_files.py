@@ -1,36 +1,89 @@
-"""Reading VASP-format structures and writing k-point meshes."""
+"""Layout of a calculation folder, reading VASP-format structures and writing k-point meshes.
+
+Every calculation folder (bulk, slab, adsorption configuration, interface, ...) has the same layout:
+
+    <folder>/POSCAR, KPOINTS, POTCAR, INCAR, run.sh   inputs (those that exist); POSCAR is the structure to relax
+    <folder>/slab_data.json                           bulk / slab metadata: only in the root, never copied
+    <folder>/relaxation/                              copies of the inputs and what the 0 K calculation produces:
+                                                      CONTCAR, run.traj, mlip_provenance.json, vasprun.xml, OUTCAR,
+                                                      single_shot_energy (``prepare_relaxation_folder``)
+    <folder>/md/<T>K/                                 NPT runs (``libraries.thermal``)
+    <folder>/alignment/                               LOCPOT and vasprun.xml of the band alignment and its results
+
+A structure is read from ``relaxation/CONTCAR`` if it exists, otherwise from the POSCAR of the root.
+"""
 import os
+import shutil
 
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import Vasprun
 
+RELAXATION_DIR = 'relaxation'
+MD_DIR         = 'md'
+ALIGNMENT_DIR  = 'alignment'
+INPUT_FILES    = ('POSCAR', 'KPOINTS', 'POTCAR', 'INCAR', 'run.sh')   # the files that are copied into the run folders
+
+
+def relaxation_dir(folder):
+    """``<folder>/relaxation``: inputs and results of the 0 K calculation of the structure in `folder`."""
+    return os.path.join(folder, RELAXATION_DIR)
+
+
+def alignment_dir(folder):
+    """``<folder>/alignment``: LOCPOT, vasprun.xml and results of the band alignment of the structure in `folder`."""
+    return os.path.join(folder, ALIGNMENT_DIR)
+
+
+def prepare_relaxation_folder(folder):
+    """Create ``<folder>/relaxation`` and copy into it the input files that exist in the root of `folder`.
+
+    Only the files of ``INPUT_FILES`` are copied (``slab_data.json`` stays in the root), and a file that is already there is
+    kept, so a relaxation that has run is never overwritten.
+
+    Returns:
+        str: the path of the relaxation folder.
+    """
+    target = relaxation_dir(folder)
+    os.makedirs(target, exist_ok=True)
+    for name in INPUT_FILES:
+        source, destination = os.path.join(folder, name), os.path.join(target, name)
+        if os.path.exists(source) and not os.path.exists(destination):
+            shutil.copy(source, destination)
+    return target
+
+
+def find_vasprun(directory):
+    """Path of the vasprun.xml (or vasprun.xml.gz) in `directory`, or None."""
+    for candidate in ['vasprun.xml', 'vasprun.xml.gz']:
+        path = os.path.join(directory, candidate)
+        if os.path.exists(path):
+            return path
+    return None
+
 
 def get_structure_file(folder):
-    """Return the preferred structure file in a VASP output directory.
+    """Return the preferred structure file of a calculation folder.
 
-    CONTCAR (relaxed) has priority over POSCAR (initial).
+    ``relaxation/CONTCAR`` (relaxed) has priority over the POSCAR of the root (initial).
     """
-    for candidate in ['CONTCAR', 'POSCAR']:
-        path = os.path.join(folder, candidate)
+    for path in [os.path.join(relaxation_dir(folder), 'CONTCAR'), os.path.join(folder, 'POSCAR')]:
         if os.path.exists(path):
             return path
     return None
 
 
 def read_structure(folder):
-    """Read a structure from the most informative VASP file available in a folder."""
-    vasprun_candidates = [
-        os.path.join(folder, 'vasprun.xml'),
-        os.path.join(folder, 'vasprun.xml.gz'),
-    ]
-    for vasprun_file in vasprun_candidates:
-        if os.path.exists(vasprun_file):
-            try:
-                return Vasprun(vasprun_file).final_structure
-            except Exception:
-                print(f'Error reading {os.path.basename(vasprun_file)} at {folder}')
-                break
+    """Read a structure from the most informative VASP file available in a calculation folder.
+
+    Priority: the vasprun.xml of ``relaxation/`` (final structure), then ``get_structure_file``.
+    """
+    vasprun_file = find_vasprun(relaxation_dir(folder))
+    if vasprun_file is not None:
+        try:
+            return Vasprun(vasprun_file).final_structure
+        except Exception:
+            print(f'Error reading {os.path.basename(vasprun_file)} at {relaxation_dir(folder)}')
 
     structure_file = get_structure_file(folder)
     if structure_file is not None:

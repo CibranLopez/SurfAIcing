@@ -128,20 +128,20 @@ def get_surface_energy_of_formation(
 
 
 def _relaxation_report(bulk_folder):
-    """Describe what the ML-IAP relaxation of the bulk did: lattice before/after and the residual forces and stress."""
+    """Describe what the ML-IAP relaxation of the bulk (in ``<bulk_folder>/relaxation``) did: lattice before/after and the residual forces and stress."""
     def describe(structure):
         a, b, c = structure.lattice.abc
         alpha, beta, gamma = structure.lattice.angles
         return (f'a, b, c = {a:.3f}, {b:.3f}, {c:.3f} Å; angles = {alpha:.2f}, {beta:.2f}, {gamma:.2f}°; '
                 f'volume = {structure.volume:.3f} Å^3')
 
-    before = Structure.from_file(f'{bulk_folder}/POSCAR')
-    after  = Structure.from_file(f'{bulk_folder}/CONTCAR')
+    before = Structure.from_file(f'{bulk_folder}/relaxation/POSCAR')
+    after  = Structure.from_file(f'{bulk_folder}/relaxation/CONTCAR')
     lines  = [f'    input   : {describe(before)}',
               f'    relaxed : {describe(after)}',
               f'    volume change: {100 * (after.volume / before.volume - 1):+.2f}%']
 
-    path = f'{bulk_folder}/mlip_provenance.json'
+    path = f'{bulk_folder}/relaxation/mlip_provenance.json'
     if os.path.exists(path):
         with open(path) as json_file:
             info = json.load(json_file)
@@ -161,7 +161,10 @@ def prepare_bulk_structure(
         model_load_path=DEFAULT_MODEL,
         device=DEFAULT_DEVICE
 ):
-    """Prepare the bulk reference folder (POSCAR, CONTCAR) from a user-provided structure file.
+    """Prepare the bulk reference folder from a user-provided structure file.
+
+    Writes ``bulk_folder/POSCAR`` (the structure as given) and, in ``bulk_folder/relaxation``, ``POSCAR`` (its copy, the
+    input of the relaxation) and ``CONTCAR`` (the relaxed structure), plus ``input_provenance.json``.
 
     Convention (``relax=None``, inferred from the file name):
 
@@ -178,7 +181,7 @@ def prepare_bulk_structure(
 
     Args:
         structure_file (str): Path to the input structure.
-        bulk_folder (str): Folder where POSCAR/CONTCAR of the bulk are written.
+        bulk_folder (str): Folder of the bulk (see ``libraries.vasp_files`` for its layout).
         relax (bool): Force (True) or skip (False) the ML-IAP relaxation. None infers it from the file name.
         model_load_path (str): ML-IAP model.
         device (str): Device for the ML-IAP.
@@ -196,22 +199,27 @@ def prepare_bulk_structure(
             raise ValueError(f"Cannot infer from the file name '{structure_file}' whether it is already relaxed. "
                              f"Name it POSCAR* (relax with the ML-IAP) or CONTCAR* (already relaxed), or pass relax=True/False.")
 
-    os.makedirs(bulk_folder, exist_ok=True)
-    # The input may already be bulk_folder/POSCAR (or CONTCAR): copying a file onto itself raises SameFileError
-    if not (os.path.exists(f'{bulk_folder}/POSCAR') and os.path.samefile(structure_file, f'{bulk_folder}/POSCAR')):
-        shutil.copy(structure_file, f'{bulk_folder}/POSCAR')
+    relax_dir = os.path.join(bulk_folder, 'relaxation')
+    os.makedirs(relax_dir, exist_ok=True)
+
+    def copy_unless_same(source, target):
+        # the input may already be the target: copying a file onto itself raises SameFileError
+        if not (os.path.exists(target) and os.path.samefile(source, target)):
+            shutil.copy(source, target)
+
+    copy_unless_same(structure_file, f'{bulk_folder}/POSCAR')           # root: the structure as given
+    copy_unless_same(f'{bulk_folder}/POSCAR', f'{relax_dir}/POSCAR')    # relaxation: the input of the relaxation
 
     if relax:
-        energy_lookup.relax_structure(f'{bulk_folder}/POSCAR', model_load_path, relax_cell=True, output_folder=bulk_folder, device=device)
-        if not os.path.exists(f'{bulk_folder}/CONTCAR'):
-            raise RuntimeError(f'The ML-IAP relaxation of {structure_file} failed: no CONTCAR was written to {bulk_folder} '
+        energy_lookup.relax_structure(f'{relax_dir}/POSCAR', model_load_path, relax_cell=True, output_folder=relax_dir, device=device)
+        if not os.path.exists(f'{relax_dir}/CONTCAR'):
+            raise RuntimeError(f'The ML-IAP relaxation of {structure_file} failed: no CONTCAR was written to {relax_dir} '
                                f'(see the error printed above; check the model path and the device).')
         mode   = 'relaxed_with_mlip'
         status = (f'Bulk relaxed with the ML-IAP ({model_load_path}), cell and ions: {structure_file}\n'
                   + _relaxation_report(bulk_folder))
     else:
-        if not (os.path.exists(f'{bulk_folder}/CONTCAR') and os.path.samefile(structure_file, f'{bulk_folder}/CONTCAR')):
-            shutil.copy(structure_file, f'{bulk_folder}/CONTCAR')
+        copy_unless_same(structure_file, f'{relax_dir}/CONTCAR')
         mode   = 'used_as_already_relaxed'
         status = (f'Bulk used as already relaxed (not verified): {structure_file}. Make sure it was relaxed at the same '
                   f'level of theory used to evaluate the slabs, otherwise surface energies are biased.')
@@ -219,7 +227,7 @@ def prepare_bulk_structure(
             status += (f'\n[warning] {os.path.basename(structure_file)} is NOT being relaxed because relax=False was requested; '
                        f'use relax=None (or True) to relax the atoms and the cell with the ML-IAP.')
 
-    with open(f'{bulk_folder}/input_provenance.json', 'w') as json_file:
+    with open(f'{relax_dir}/input_provenance.json', 'w') as json_file:
         json.dump({'input_file': os.path.abspath(structure_file), 'mode': mode,
                    'model': model_load_path if relax else None}, json_file, indent=2)
 

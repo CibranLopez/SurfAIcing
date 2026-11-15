@@ -258,6 +258,41 @@ def make_cell_upper_triangular(atoms, tol=1e-6, verbose=True):
     return atoms
 
 
+_AXES = 'xyz'
+
+
+def cell_mask(fix_cell):
+    """Mask of the dynamic strain components of ASE's NPT for a given ``fix_cell`` (None: fully flexible).
+
+    ``fix_cell`` names what is kept fixed during the run, in the frame of the NPT run (``make_cell_upper_triangular``: c along
+    z, b in the yz-plane; for a slab or an interface with a, b in the surface plane that is z = the stacking direction and
+    x, y = the plane):
+
+        None        every component of the cell is free (the default);
+        'all'       the whole cell is fixed: the lattice vectors do not change, the run is at constant volume (NVT);
+        'z'         the stacking direction is fixed (the z components of a, b and c), the rest is free;
+        'xy'        a and b are fixed in the plane, only the z components (the length of c) are free;
+        'x', 'y', 'xz', ...  any other combination of axes; a list such as ['x', 'y'] is accepted too.
+
+    A frozen axis freezes every strain component that involves it (ASE's ``mask`` is the outer product of the per-axis
+    mask), so fixing 'xy' leaves only the zz strain, that is, the length of c along z, free.
+
+    Returns the per-axis mask (3 values, 1 = free) or None if the cell is fully flexible. 'all' gives zeros (no barostat).
+    """
+    if fix_cell is None or fix_cell is False:
+        return None
+    if isinstance(fix_cell, str):
+        key = fix_cell.strip().lower()
+        if key in ('all', 'xyz'):
+            return np.zeros(3)
+        axes = set(key)
+    else:
+        axes = {str(a).strip().lower() for a in fix_cell}
+    if not axes or not axes <= set(_AXES):
+        raise ValueError(f"fix_cell must be None, 'all' or a combination of the axes 'x', 'y', 'z'; got {fix_cell!r}")
+    return np.array([0.0 if a in axes else 1.0 for a in _AXES])
+
+
 def npt_dynamics(
         path_to_structure,
         model_load_path=DEFAULT_MODEL,
@@ -272,12 +307,14 @@ def npt_dynamics(
         n_steps=20000,
         loginterval=10,
         seed=None,
+        fix_cell=None,
         output_folder='./'
 ):
     """
     Constant-pressure, constant-temperature molecular dynamics (NPT) with ASE's Melchionna scheme: a Nose-Hoover
-    thermostat combined with a Parrinello-Rahman barostat. The cell is FULLY flexible (no component is frozen), so
-    the structure does not need to be relaxed beforehand. The structure may be rotated rigidly (see
+    thermostat combined with a Parrinello-Rahman barostat. By default the cell is FULLY flexible (no component is
+    frozen), so the structure does not need to be relaxed beforehand; ``fix_cell`` freezes any of its directions, up to the
+    whole cell (see ``cell_mask``). The structure may be rotated rigidly (see
     ``make_cell_upper_triangular``); nothing else about it changes.
 
     NPT samples the Gibbs ensemble G(T, P). The mean potential energy of the run and the vibrational spectrum of its
@@ -302,6 +339,9 @@ def npt_dynamics(
         n_steps           (int):   Number of MD steps.
         loginterval       (int):   A frame is stored every `loginterval` steps (frame spacing = loginterval * timestep).
         seed              (int):   Seed of the initial velocities (None: random).
+        fix_cell          (str):   None (fully flexible), 'all' (fixed cell, constant volume) or the axes to keep fixed, e.g. 'z'
+                                   or 'xy' (``cell_mask``). With a fixed cell the pressure of the run is whatever the cell
+                                   gives: the free energy is then that of the fixed cell (Helmholtz at that volume).
         output_folder     (str):   Existing folder for the output files.
 
     Returns:
@@ -326,8 +366,9 @@ def npt_dynamics(
     _initialize_velocities(atoms, temperature, rng=rng)
     Stationary(atoms)                                # 3N - 3 degrees of freedom
 
+    mask = cell_mask(fix_cell)
     dyn = _NPT(atoms, timestep=timestep_ase, temperature_K=temperature, ttime=ttime_ase, pfactor=pfactor,
-               externalstress=pressure_ase, trajectory=f'{output_folder}/output.traj',
+               externalstress=pressure_ase, mask=mask, trajectory=f'{output_folder}/output.traj',
                logfile=f'{output_folder}/npt.log', loginterval=loginterval)
     dyn.run(n_steps)
 
@@ -336,5 +377,52 @@ def npt_dynamics(
     info = {'temperature_K': float(temperature), 'pressure_GPa': float(pressure), 'timestep_fs': dt_fs,
             'ttime_fs': float(ttime), 'ptime_fs': float(ptime), 'barostat_modulus_GPa': float(barostat_modulus),
             'n_steps': int(n_steps), 'loginterval': int(loginterval), 'frame_dt_fs': dt_fs * loginterval,
-            'n_frames': int(n_steps // loginterval + 1), 'model': model_load_path, 'device': device, 'seed': seed}
+            'n_frames': int(n_steps // loginterval + 1), 'model': model_load_path, 'device': device, 'seed': seed,
+            'fix_cell': fix_cell if fix_cell is None or isinstance(fix_cell, str) else ''.join(fix_cell)}
     return atoms, info
+
+
+def diatomic_vibration(
+        path_to_structure,
+        model_load_path=DEFAULT_MODEL,
+        device=DEFAULT_DEVICE,
+        dispersion=False,
+        delta=0.01
+):
+    """Harmonic stretching frequency of a relaxed isolated diatomic molecule (e.g. the H2 gas reference), from the ML-IAP.
+
+    The two atoms are displaced symmetrically along the bond by +-`delta` (Angstrom, each atom, so the bond length changes by
+    2 `delta`); the force constant is k = -dF/dr from the central difference of the force along the bond, and
+    omega = sqrt(k / mu) with the reduced mass mu. Only the stretch is a vibration: the translations and the rotations of an
+    isolated molecule are not included (see ``libraries.adsorption``).
+
+    Returns a dict: 'omega_meV', 'k_eV_A2', 'bond_A', 'reduced_mass_amu', 'delta_A', 'model'.
+    """
+    atoms = read_vasp(file=path_to_structure)
+    if len(atoms) != 2:
+        raise ValueError(f'{path_to_structure} has {len(atoms)} atoms; a diatomic molecule is expected')
+    atoms.calc = mace_mp(model=model_load_path, device=device, dispersion=dispersion, default_dtype='float64')
+
+    d = atoms.positions[1] - atoms.positions[0]
+    bond = float(np.linalg.norm(d))
+    u = d / bond                                                  # unit vector along the bond, atom 0 -> atom 1
+    m0, m1 = atoms.get_masses()
+    mu = m0 * m1 / (m0 + m1)
+
+    def stretch_force(shift):
+        """Force on atom 1 along the bond, with the bond stretched by 2*shift (atom 0 moved by -shift, atom 1 by +shift)."""
+        trial = atoms.copy()
+        trial.calc = atoms.calc
+        trial.positions[0] -= shift * u
+        trial.positions[1] += shift * u
+        return float(trial.get_forces()[1] @ u)
+
+    # F1 = -k (r - r0) with r - r0 = 2*shift  ->  dF1/dshift = -2k
+    k = -(stretch_force(delta) - stretch_force(-delta)) / (4.0 * delta)
+    if k <= 0:
+        raise ValueError(f'{path_to_structure}: negative force constant ({k:.3g} eV/A^2): the molecule is not relaxed')
+    # omega = sqrt(k / mu), with k in eV/A^2 -> J/m^2 and mu in amu -> kg
+    omega_rad_per_s = np.sqrt(k * units._e / (mu * units._amu) * 1e20)       # (eV/A^2) -> J/m^2 = kg/s^2
+    omega_meV = float(units._hbar * omega_rad_per_s / units._e * 1e3)
+    return {'omega_meV': omega_meV, 'k_eV_A2': float(k), 'bond_A': bond, 'reduced_mass_amu': float(mu),
+            'delta_A': float(delta), 'model': model_load_path}
