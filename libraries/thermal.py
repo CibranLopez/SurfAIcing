@@ -81,23 +81,23 @@ from pymatgen.core.structure import Structure
 # ---------------------------------------------------------------------------------------------------------------
 # constants and defaults
 # ---------------------------------------------------------------------------------------------------------------
-KB_EV          = 8.617333262e-5      # eV/K
-KB_MEV         = 8.617333262e-2      # meV/K
-H_MEV_FS       = 4135.667696         # Planck constant in meV*fs (frequency in cycles/fs -> energy in meV)
-EV_A3_TO_GPA   = 160.21766208
+KB_EV        = 8.617333262e-5  # eV/K
+KB_MEV       = 8.617333262e-2  # meV/K
+H_MEV_FS     = 4135.667696     # Planck constant in meV*fs (frequency in cycles/fs -> energy in meV)
+EV_A3_TO_GPA = 160.21766208
 
-OMEGA_MIN_MEV    = 0.1               # modes below this frequency (meV) are not counted in F_vib
-MIN_LENGTH       = 15.0              # Angstrom, minimum length of the lattice vectors of an MD cell
-EQUIL_PS         = 2.0               # ps discarded (thermalisation) at the start of a run, unless its md.json sets another value
-VDOS_MAX_LAG_PS  = 4.0               # ps of the velocity autocorrelation used for the spectrum
-MIN_PRODUCTION_PS = 5.0              # shorter production runs are flagged
-EPOT_DRIFT_TOL   = 5e-4              # eV/atom, drift of the potential energy over the production run that is flagged
-VACUUM_MIN_A     = 6.0               # a slab whose vacuum gets thinner than this is flagged (range of the MACE models)
-C_CHANGE_TOL     = 0.10              # relative change of the length of c of a slab that is flagged
-ADS_MAX_BOND_A   = 2.5               # an H atom further than this from every other atom has desorbed (flagged)
-HH_MOLECULE_A    = 1.1               # H-H distances below this are a molecule (the H2 bond is 0.74 A)
-ADS_HOP_A        = 1.5               # an adsorbed H that moves further than this relative to the surface hops between sites
-T_RUN_TOL_K      = 1.0               # K, an operating temperature further than this from the MD run it uses is flagged
+OMEGA_MIN_MEV     = 0.1   # modes below this frequency (meV) are not counted in F_vib
+MIN_LENGTH        = 15.0  # Angstrom, minimum length of the lattice vectors of an MD cell
+EQUIL_PS          = 2.0   # ps discarded (thermalisation) at the start of a run, unless its md.json sets another value
+VDOS_MAX_LAG_PS   = 4.0   # ps of the velocity autocorrelation used for the spectrum
+MIN_PRODUCTION_PS = 5.0   # shorter production runs are flagged
+EPOT_DRIFT_TOL    = 5e-4  # eV/atom, drift of the potential energy over the production run that is flagged
+VACUUM_MIN_A      = 6.0   # a slab whose vacuum gets thinner than this is flagged (range of the MACE models)
+C_CHANGE_TOL      = 0.10  # relative change of the length of c of a slab that is flagged
+ADS_MAX_BOND_A    = 2.5   # an H atom further than this from every other atom has desorbed (flagged)
+HH_MOLECULE_A     = 1.1   # H-H distances below this are a molecule (the H2 bond is 0.74 A)
+ADS_HOP_A         = 1.5   # an adsorbed H that moves further than this relative to the surface hops between sites
+T_RUN_TOL_K       = 1.0   # K, an operating temperature further than this from the MD run it uses is flagged
 
 
 class MissingData(Exception):
@@ -160,7 +160,7 @@ def write_md_json(md_dir, data):
 def _fix_cell_label(fix_cell):
     """Canonical form of ``fix_cell`` as stored in md.json: None, 'all' or the fixed axes as a sorted string ('xy', 'z', ...)."""
     import libraries.mlip as mlip
-    mask = mlip.cell_mask(fix_cell)                       # validates it (None: fully flexible)
+    mask = mlip.cell_mask(fix_cell)  # validates it (None: fully flexible)
     if mask is None:
         return None
     fixed = ''.join(a for a, m in zip('xyz', mask) if m == 0)
@@ -464,7 +464,7 @@ class MDData:
     dt_fs: float
     temperature_K: float
     code: str
-    momenta_from: str            # 'stored' (ML-IAP) or 'finite_difference' (VASP: positions only)
+    momenta_from: str  # 'stored' (ML-IAP) or 'finite_difference' (VASP: positions only)
     initial_cell: np.ndarray
     initial_frac: np.ndarray
 
@@ -526,9 +526,9 @@ def _read_vasp_run(md_dir, plan):
     # central-difference velocities of the fractional coordinates on the mean cell (the motion of the cell itself is
     # not part of the phonon spectrum); frames 1..T-2 keep a velocity
     h_mean = cell.mean(axis=0)
-    v = (frac[2:] - frac[:-2]) / (2.0 * dt_fs) @ h_mean                      # A/fs
+    v = (frac[2:] - frac[:-2]) / (2.0 * dt_fs) @ h_mean  # A/fs
     masses_amu = masses[None, :, None]
-    v = v - (v * masses_amu).sum(axis=1, keepdims=True) / masses.sum()       # remove centre-of-mass velocity
+    v = v - (v * masses_amu).sum(axis=1, keepdims=True) / masses.sum()  # remove centre-of-mass velocity
     return dict(frac=frac[1:-1], cell=cell[1:-1], mom=v * masses_amu, masses=masses, symbols=symbols,
                 epot=epot[1:-1], dt_fs=dt_fs, temperature_K=temperature, code='VASP',
                 momenta_from='finite_difference')
@@ -740,7 +740,14 @@ def analyse_md_run(
     else:
         kinetic_T = None                                                    # finite-difference velocities: not reliable
 
-    sc = plan.get('supercell', [1, 1, 1])
+    sc = plan.get('supercell')
+    if sc is None:
+        poscar_path = os.path.join(os.path.dirname(os.path.dirname(md_dir)), 'POSCAR')
+        if os.path.exists(poscar_path):
+            unit_lengths = Structure.from_file(poscar_path).lattice.abc
+            md_lengths = np.linalg.norm(data.initial_cell, axis=1)
+            sc = [max(1, int(round(md_lengths[i] / unit_lengths[i]))) for i in range(3)]
+    
     a, b = data.cell[:, 0, :], data.cell[:, 1, :]
     area_cell = np.linalg.norm(np.cross(a, b), axis=1) / (sc[0] * sc[1])    # area of one original cell, A^2
     lengths = np.linalg.norm(data.cell, axis=2) / np.array(sc)[None, :]
